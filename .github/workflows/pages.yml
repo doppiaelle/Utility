@@ -2,7 +2,7 @@ name: Deploy Kritoma Card Editor
 
 on:
   push:
-    branches: [main, kritomia-card-editor]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
