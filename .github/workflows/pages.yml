@@ -1,4 +1,4 @@
-name: Deploy Kritomia Card Editor
+name: Deploy Kritoma Card Editor
 
 on:
   push:
