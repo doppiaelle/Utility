@@ -7,7 +7,12 @@ type CardType='fighter'|'location'|'action'|'extraFighter'|'objective'|'token';
 type Detail={label:string;value:string;icon?:string;opacity?:number};
 type Stat={kind:string;value:string;opacity?:number};
 type LayerOpacity={frame:number;header:number;cost:number;meta:number;effect:number;stats:number;id:number;artwork:number};
-type FrameStyle={size:number;radius:number;opacity:number;accentSize:number;accentOpacity:number;inset:number};
+type FramePreset='rounded'|'double'|'square'|'bevel'|'octagon'|'shield'|'arch'|'wave'|'tech'|'offset'|'broken'|'random';
+type AccentPreset='corners'|'filigree'|'waves'|'slashes'|'circuit'|'runes'|'orbits'|'spines'|'ribbons'|'fragments'|'minimal'|'none'|'random';
+type FrameStyle={
+  size:number;radius:number;opacity:number;inset:number;framePreset:FramePreset;frameDetail:number;frameSeed:number;
+  accentSize:number;accentOpacity:number;accentPreset:AccentPreset;accentDensity:number;accentMotion:number;accentSeed:number;
+};
 type TextRole='cost'|'title'|'meta'|'effect'|'stats';
 type TextStyle={size:number;family:string};
 type TypographyStyle=Record<TextRole,TextStyle>;
@@ -20,7 +25,37 @@ type Card={
 
 const TYPES:Record<CardType,string>={fighter:'Combattente',location:'Luogo',action:'Azione',extraFighter:'ExtraCombattente',objective:'Obiettivo',token:'Token'};
 const DEFAULT_LAYERS:LayerOpacity={frame:1,header:.96,cost:1,meta:.94,effect:.90,stats:.98,id:.98,artwork:1};
-const DEFAULT_FRAME:FrameStyle={size:3.2,radius:26,opacity:.92,accentSize:2.2,accentOpacity:.72,inset:10};
+const DEFAULT_FRAME:FrameStyle={
+  size:3.2,radius:26,opacity:.92,inset:10,framePreset:'rounded',frameDetail:.72,frameSeed:104729,
+  accentSize:2.2,accentOpacity:.72,accentPreset:'corners',accentDensity:1,accentMotion:1,accentSeed:130363
+};
+const FRAME_PRESETS:{id:Exclude<FramePreset,'random'>;label:string}[]=[
+  {id:'rounded',label:'Tradizionale · Arrotondata'},
+  {id:'double',label:'Tradizionale · Doppia linea'},
+  {id:'shield',label:'Tradizionale · Scudo'},
+  {id:'arch',label:'Tradizionale · Arco'},
+  {id:'square',label:'Geometrica · Squadrata'},
+  {id:'bevel',label:'Geometrica · Angoli tagliati'},
+  {id:'octagon',label:'Geometrica · Ottagonale'},
+  {id:'tech',label:'Astratta · Tech / notch'},
+  {id:'offset',label:'Astratta · Offset'},
+  {id:'broken',label:'Astratta · Segmentata'},
+  {id:'wave',label:'Organica · Ondulata'}
+];
+const ACCENT_PRESETS:{id:Exclude<AccentPreset,'random'>;label:string}[]=[
+  {id:'corners',label:'Tradizionale · Angoli'},
+  {id:'filigree',label:'Tradizionale · Filigrana'},
+  {id:'ribbons',label:'Tradizionale · Nastri'},
+  {id:'waves',label:'Organica · Onde'},
+  {id:'orbits',label:'Organica · Orbite'},
+  {id:'spines',label:'Organica · Spine'},
+  {id:'slashes',label:'Dinamica · Slash'},
+  {id:'fragments',label:'Dinamica · Frammenti'},
+  {id:'circuit',label:'Astratta · Circuiti'},
+  {id:'runes',label:'Astratta · Rune'},
+  {id:'minimal',label:'Minimal · Linee'},
+  {id:'none',label:'Nessun accento'}
+];
 const DEFAULT_TYPOGRAPHY:TypographyStyle={
   cost:{size:23,family:'Arial'},
   title:{size:24,family:'Arial'},
@@ -72,6 +107,9 @@ function normalizeTypography(input:any):TypographyStyle{return{
   effect:{...DEFAULT_TYPOGRAPHY.effect,...(input?.effect||{})},
   stats:{...DEFAULT_TYPOGRAPHY.stats,...(input?.stats||{})}
 }}
+const makeRng=(seed:number)=>{let s=(Math.floor(seed)||1)>>>0;return()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296}};
+const nextSeed=(previous:number|undefined)=>{let next=0,prev=(previous||0)>>>0;do next=(Math.floor(Math.random()*4294967295)+1)>>>0;while(next===prev);return next};
+const linePath=(d:string,theme:string,width:number,opacity=1,dash='')=>`<path d="${d}" fill="none" stroke="${theme}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"${dash?` stroke-dasharray="${dash}"`:''}/>`;
 
 const slotIcon=(i:number,x:number,y:number)=>i===0
   ?`<g transform="translate(${x} ${y})" fill="#f6f0e5"><path d="M0-13 4-5 12-8 7 0 13 5 5 5 2 13-2 6-10 10-7 2-14-2-6-5-7-13 0-8Z"/></g>`
@@ -99,25 +137,107 @@ function normalizeCard(c:Card):Card{const legacy:any=c||{};return{
 function preset(type:CardType):Card{const c=normalizeCard({...DEFAULT,type,name:'Nome Carta',meta:DEFAULT.meta.map(x=>({...x})),effects:DEFAULT.effects.map(x=>({...x})),stats:DEFAULT.stats.map(x=>({...x}))});if(type==='location')c.stats=[{kind:'RES',value:'',opacity:1}];if(type==='action'){c.meta=[{label:'',value:'Tipo',opacity:1},{label:'',value:'Velocità',opacity:1}];c.stats=[];c.effects=[{label:'EFFETTO',value:'Descrivi chiaramente l’azione.',opacity:1}]}if(type==='extraFighter')c.meta=[{label:'',value:'Requisito',opacity:1},{label:'',value:'Archetipo',opacity:1}];if(type==='objective'){delete c.cost;c.meta=[];c.stats=[{kind:'PV',value:'',opacity:1}];c.effects=[{label:'CONDIZIONE',value:'Descrivi la condizione obiettivo.',opacity:1}]}if(type==='token'){delete c.cost;c.meta=[{label:'',value:'Token',opacity:1}]}return c}
 function useLocalStore(){const[cards,setCards]=useState<Card[]>(()=>{try{return(JSON.parse(localStorage.getItem('kritoma.cards')||'[]')as Card[]).map(normalizeCard)}catch{return[]}});const save=(next:Card[])=>{setCards(next);localStorage.setItem('kritoma.cards',JSON.stringify(next))};return{cards,save}}
 
-function frameSvg(theme:string,style:FrameStyle,layerOpacity:number){
-  const o=clamp01(style.opacity,1)*layerOpacity,sw=clamp(style.size,1,10),r=clamp(style.radius,8,46),inset=clamp(style.inset,4,28),a=clamp(style.accentSize,.5,7),ao=clamp01(style.accentOpacity,.7);
-  const x=20+inset/2,y=20+inset/2,w=590-inset,h=840-inset;
-  const arm=clamp(72+r*1.5,84,142);
-  return`<g opacity="${o}">
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="none" stroke="#07121a" stroke-width="${sw+3}" stroke-linejoin="round"/>
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="none" stroke="${theme}" stroke-width="${sw}" stroke-linejoin="round"/>
-    <g fill="none" stroke="${theme}" stroke-width="${a}" stroke-linecap="round" opacity="${ao}">
-      <path d="M ${x+15} ${y+arm} V ${y+r+8} Q ${x+15} ${y+15} ${x+r+8} ${y+15} H ${x+arm}"/>
-      <path d="M ${x+w-15} ${y+arm} V ${y+r+8} Q ${x+w-15} ${y+15} ${x+w-r-8} ${y+15} H ${x+w-arm}"/>
-      <path d="M ${x+15} ${y+h-arm} V ${y+h-r-8} Q ${x+15} ${y+h-15} ${x+r+8} ${y+h-15} H ${x+arm}"/>
-      <path d="M ${x+w-15} ${y+h-arm} V ${y+h-r-8} Q ${x+w-15} ${y+h-15} ${x+w-r-8} ${y+h-15} H ${x+w-arm}"/>
-    </g>
-    <g fill="none" stroke="${theme}" stroke-width="${Math.max(.7,a*.55)}" stroke-linecap="round" opacity="${ao*.62}">
-      <path d="M ${x+9} ${y+245} V ${y+360}"/><path d="M ${x+w-9} ${y+245} V ${y+360}"/>
-      <path d="M ${x+9} ${y+480} V ${y+592}"/><path d="M ${x+w-9} ${y+480} V ${y+592}"/>
-    </g>
-  </g>`;
+function randomFramePath(x:number,y:number,w:number,h:number,r:number,seed:number){
+  const rnd=makeRng(seed),cut1=10+rnd()*22,cut2=12+rnd()*26,bow=(rnd()-.5)*18,side=(rnd()-.5)*12,topNotch=18+rnd()*42,bottomNotch=18+rnd()*42;
+  return`M ${x+r+cut1} ${y} H ${x+w-r-topNotch} Q ${x+w-r/2} ${y+bow} ${x+w} ${y+r+cut2} V ${y+h*.38+side} Q ${x+w-8-rnd()*8} ${y+h*.50} ${x+w} ${y+h*.62-side} V ${y+h-r-cut1} Q ${x+w-rnd()*18} ${y+h} ${x+w-r-bottomNotch} ${y+h} H ${x+r+bottomNotch} Q ${x+rnd()*18} ${y+h} ${x} ${y+h-r-cut2} V ${y+h*.62+side} Q ${x+8+rnd()*8} ${y+h*.50} ${x} ${y+h*.38-side} V ${y+r+cut1} Q ${x+r/2} ${y-bow} ${x+r+cut1} ${y} Z`;
 }
+function frameBaseSvg(theme:string,style:FrameStyle,layerOpacity:number){
+  const o=clamp01(style.opacity,1)*layerOpacity,sw=clamp(style.size,1,10),r=clamp(style.radius,8,46),inset=clamp(style.inset,4,28),detail=clamp01(style.frameDetail,.7);
+  const x=20+inset/2,y=20+inset/2,w=590-inset,h=840-inset,shadow='#07121a';
+  const strokePair=(shape:string,extra='')=>`<g opacity="${o}">${shape.replaceAll('__COLOR__',shadow).replaceAll('__WIDTH__',String(sw+3)).replaceAll('__EXTRA__','')}${shape.replaceAll('__COLOR__',theme).replaceAll('__WIDTH__',String(sw)).replaceAll('__EXTRA__',extra)}</g>`;
+  const pathShape=(d:string)=>`<path d="${d}" fill="none" stroke="__COLOR__" stroke-width="__WIDTH__" stroke-linejoin="round" stroke-linecap="round" __EXTRA__/>`;
+  const rectShape=(rx:number)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="none" stroke="__COLOR__" stroke-width="__WIDTH__" stroke-linejoin="round" __EXTRA__/>`;
+  let main='';
+  if(style.framePreset==='square')main=strokePair(rectShape(4));
+  else if(style.framePreset==='rounded')main=strokePair(rectShape(r));
+  else if(style.framePreset==='double'){
+    main=strokePair(rectShape(r));
+    const gap=sw+7;main+=`<rect x="${x+gap}" y="${y+gap}" width="${w-gap*2}" height="${h-gap*2}" rx="${Math.max(4,r-gap*.45)}" fill="none" stroke="${theme}" stroke-width="${Math.max(.8,sw*.45)}" opacity="${o*detail*.72}"/>`;
+  }else if(style.framePreset==='bevel')main=strokePair(pathShape(bevel(x,y,w,h,clamp(r*.75,10,34))));
+  else if(style.framePreset==='octagon')main=strokePair(pathShape(bevel(x,y,w,h,clamp(28+r*.25,28,42))));
+  else if(style.framePreset==='shield'){
+    const d=`M ${x+r} ${y} H ${x+w-r} Q ${x+w} ${y} ${x+w} ${y+r} V ${y+h*.68} Q ${x+w} ${y+h*.82} ${x+w*.64} ${y+h} H ${x+w*.36} Q ${x} ${y+h*.82} ${x} ${y+h*.68} V ${y+r} Q ${x} ${y} ${x+r} ${y} Z`;
+    main=strokePair(pathShape(d));
+  }else if(style.framePreset==='arch'){
+    const d=`M ${x+r} ${y+16} Q ${x+w*.22} ${y-8} ${x+w*.5} ${y} Q ${x+w*.78} ${y-8} ${x+w-r} ${y+16} Q ${x+w} ${y+18} ${x+w} ${y+r+22} V ${y+h-r} Q ${x+w} ${y+h} ${x+w-r} ${y+h} H ${x+r} Q ${x} ${y+h} ${x} ${y+h-r} V ${y+r+22} Q ${x} ${y+18} ${x+r} ${y+16} Z`;
+    main=strokePair(pathShape(d));
+  }else if(style.framePreset==='wave'){
+    const amp=8+detail*10,d=`M ${x+r} ${y} C ${x+w*.25} ${y-amp} ${x+w*.35} ${y+amp} ${x+w*.5} ${y} S ${x+w*.78} ${y-amp} ${x+w-r} ${y} Q ${x+w} ${y} ${x+w} ${y+r} C ${x+w+amp*.35} ${y+h*.28} ${x+w-amp*.35} ${y+h*.42} ${x+w} ${y+h*.55} S ${x+w+amp*.35} ${y+h*.82} ${x+w-r} ${y+h} C ${x+w*.72} ${y+h+amp} ${x+w*.60} ${y+h-amp} ${x+w*.5} ${y+h} S ${x+w*.24} ${y+h+amp} ${x+r} ${y+h} Q ${x} ${y+h} ${x} ${y+h-r} C ${x-amp*.35} ${y+h*.78} ${x+amp*.35} ${y+h*.58} ${x} ${y+h*.45} S ${x-amp*.35} ${y+h*.18} ${x} ${y+r} Q ${x} ${y} ${x+r} ${y} Z`;
+    main=strokePair(pathShape(d));
+  }else if(style.framePreset==='tech'){
+    const c=18+detail*12,n=32+detail*24,d=`M ${x+c} ${y} H ${x+w*.38} l ${n*.25} ${n*.18} H ${x+w-c} L ${x+w} ${y+c} V ${y+h*.32} l ${-n*.18} ${n*.25} v ${n*.55} l ${n*.18} ${n*.25} V ${y+h-c} L ${x+w-c} ${y+h} H ${x+w*.62} l ${-n*.25} ${-n*.18} H ${x+c} L ${x} ${y+h-c} V ${y+h*.68} l ${n*.18} ${-n*.25} v ${-n*.55} l ${-n*.18} ${-n*.25} V ${y+c} Z`;
+    main=strokePair(pathShape(d));
+  }else if(style.framePreset==='offset'){
+    main=strokePair(rectShape(r));
+    const dx=7+detail*6,dy=5+detail*5;main+=`<rect x="${x+dx}" y="${y-dy}" width="${w-dx*1.3}" height="${h+dy*.6}" rx="${r}" fill="none" stroke="${theme}" stroke-width="${Math.max(.8,sw*.55)}" opacity="${o*.48}"/>`;
+  }else if(style.framePreset==='broken'){
+    const dash=`${48+detail*36} ${14+detail*18}`;main=strokePair(rectShape(r),`stroke-dasharray="${dash}"`);
+  }else{
+    const d=randomFramePath(x,y,w,h,r,style.frameSeed);main=strokePair(pathShape(d));
+    const rnd=makeRng(style.frameSeed^0x9e3779b9),gap=5+rnd()*9;main+=`<path d="${randomFramePath(x+gap,y+gap,w-gap*2,h-gap*2,Math.max(7,r-gap*.4),style.frameSeed^0x85ebca6b)}" fill="none" stroke="${theme}" stroke-width="${Math.max(.7,sw*(.28+rnd()*.35))}" opacity="${o*(.25+detail*.38)}"/>`;
+  }
+  return main;
+}
+function randomAccentSvg(theme:string,style:FrameStyle,x:number,y:number,w:number,h:number){
+  const rnd=makeRng(style.accentSeed),a=clamp(style.accentSize,.5,7),ao=clamp01(style.accentOpacity,.7),motion=clamp(style.accentMotion,.2,1.8),count=Math.round(clamp(style.accentDensity,.5,1.8)*(7+rnd()*5));
+  let out='';
+  for(let i=0;i<count;i++){
+    const side=i%4,t=.10+rnd()*.80,len=(26+rnd()*72)*motion,bend=(rnd()-.5)*38*motion,offset=7+rnd()*12;
+    let sx=0,sy=0,ex=0,ey=0,cx=0,cy=0;
+    if(side===0){sx=x+w*t;sy=y+offset;ex=clamp(sx+(rnd()-.5)*len,x+12,x+w-12);ey=y+offset+len*.25;cx=(sx+ex)/2+bend;cy=y+offset-len*.18}
+    if(side===1){sx=x+w-offset;sy=y+h*t;ex=x+w-offset-len*.25;ey=clamp(sy+(rnd()-.5)*len,y+12,y+h-12);cx=x+w-offset+len*.18;cy=(sy+ey)/2+bend}
+    if(side===2){sx=x+w*(1-t);sy=y+h-offset;ex=clamp(sx+(rnd()-.5)*len,x+12,x+w-12);ey=y+h-offset-len*.25;cx=(sx+ex)/2+bend;cy=y+h-offset+len*.18}
+    if(side===3){sx=x+offset;sy=y+h*(1-t);ex=x+offset+len*.25;ey=clamp(sy+(rnd()-.5)*len,y+12,y+h-12);cx=x+offset-len*.18;cy=(sy+ey)/2+bend}
+    out+=linePath(`M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`,theme,Math.max(.6,a*(.42+rnd()*.72)),ao*(.42+rnd()*.52));
+    if(rnd()>.62)out+=`<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${(1.1+rnd()*2.2).toFixed(1)}" fill="${theme}" opacity="${(ao*(.35+rnd()*.45)).toFixed(2)}"/>`;
+  }
+  return out;
+}
+function frameAccentSvg(theme:string,style:FrameStyle,layerOpacity:number){
+  const a=clamp(style.accentSize,.5,7),ao=clamp01(style.accentOpacity,.7)*layerOpacity,density=clamp(style.accentDensity,.5,1.8),motion=clamp(style.accentMotion,.2,1.8),inset=clamp(style.inset,4,28);
+  const x=20+inset/2,y=20+inset/2,w=590-inset,h=840-inset,p=12+motion*8,arm=clamp((72+style.radius*1.5)*density,68,180);
+  if(style.accentPreset==='none')return'';
+  if(style.accentPreset==='random')return`<g opacity="${ao}">${randomAccentSvg(theme,{...style,accentOpacity:1},x,y,w,h)}</g>`;
+  let out='';
+  if(style.accentPreset==='corners'){
+    out+=linePath(`M ${x+p} ${y+arm} V ${y+style.radius+8} Q ${x+p} ${y+p} ${x+style.radius+8} ${y+p} H ${x+arm}`,theme,a,ao);
+    out+=linePath(`M ${x+w-p} ${y+arm} V ${y+style.radius+8} Q ${x+w-p} ${y+p} ${x+w-style.radius-8} ${y+p} H ${x+w-arm}`,theme,a,ao);
+    out+=linePath(`M ${x+p} ${y+h-arm} V ${y+h-style.radius-8} Q ${x+p} ${y+h-p} ${x+style.radius+8} ${y+h-p} H ${x+arm}`,theme,a,ao);
+    out+=linePath(`M ${x+w-p} ${y+h-arm} V ${y+h-style.radius-8} Q ${x+w-p} ${y+h-p} ${x+w-style.radius-8} ${y+h-p} H ${x+w-arm}`,theme,a,ao);
+  }else if(style.accentPreset==='filigree'){
+    const q=34*motion;
+    out+=linePath(`M ${x+18} ${y+125} C ${x+18} ${y+66-q} ${x+72+q} ${y+28} ${x+150} ${y+28} C ${x+108} ${y+34} ${x+88} ${y+72} ${x+116} ${y+96} C ${x+138} ${y+114} ${x+164} ${y+86} ${x+146} ${y+65}`,theme,a*.72,ao);
+    out+=linePath(`M ${x+w-18} ${y+125} C ${x+w-18} ${y+66-q} ${x+w-72-q} ${y+28} ${x+w-150} ${y+28} C ${x+w-108} ${y+34} ${x+w-88} ${y+72} ${x+w-116} ${y+96} C ${x+w-138} ${y+114} ${x+w-164} ${y+86} ${x+w-146} ${y+65}`,theme,a*.72,ao);
+    out+=linePath(`M ${x+20} ${y+h-100} C ${x+72} ${y+h-36} ${x+136} ${y+h-72} ${x+180} ${y+h-28}`,theme,a*.62,ao*.82);
+    out+=linePath(`M ${x+w-20} ${y+h-100} C ${x+w-72} ${y+h-36} ${x+w-136} ${y+h-72} ${x+w-180} ${y+h-28}`,theme,a*.62,ao*.82);
+  }else if(style.accentPreset==='waves'){
+    const amp=12*motion,segments=Math.max(2,Math.round(3*density));
+    for(let i=0;i<segments;i++){const yy=y+190+i*95/density;out+=linePath(`M ${x+7} ${yy} C ${x+7+amp} ${yy-28} ${x+7+amp} ${yy+28} ${x+7} ${yy+56}`,theme,a*.52,ao*(.9-i*.08));out+=linePath(`M ${x+w-7} ${yy} C ${x+w-7-amp} ${yy-28} ${x+w-7-amp} ${yy+28} ${x+w-7} ${yy+56}`,theme,a*.52,ao*(.9-i*.08));}
+  }else if(style.accentPreset==='slashes'){
+    const count=Math.round(4*density),len=24+24*motion;
+    for(let i=0;i<count;i++){const yy=y+170+i*(h-340)/Math.max(1,count-1);out+=linePath(`M ${x+5} ${yy+len} L ${x+5+len} ${yy}`,theme,a*.68,ao);out+=linePath(`M ${x+w-5} ${yy+len} L ${x+w-5-len} ${yy}`,theme,a*.68,ao);}
+  }else if(style.accentPreset==='circuit'){
+    const count=Math.round(3*density);
+    for(let i=0;i<count;i++){const yy=y+190+i*150/density,dx=26+18*motion;out+=linePath(`M ${x+6} ${yy} H ${x+dx} v ${18+8*motion} h ${22+10*motion}`,theme,a*.48,ao);out+=`<circle cx="${x+dx+22+10*motion}" cy="${yy+18+8*motion}" r="2.6" fill="${theme}" opacity="${ao}"/>`;out+=linePath(`M ${x+w-6} ${yy} H ${x+w-dx} v ${18+8*motion} h ${-22-10*motion}`,theme,a*.48,ao);}
+  }else if(style.accentPreset==='runes'){
+    const count=Math.round(4*density),gap=(h-300)/Math.max(1,count-1);
+    for(let i=0;i<count;i++){const yy=y+150+i*gap,s=8+5*motion;out+=linePath(`M ${x+8} ${yy-s} l ${s} ${s} -${s} ${s} M ${x+8+s} ${yy-s} v ${s*2}`,theme,a*.55,ao);out+=linePath(`M ${x+w-8} ${yy-s} l -${s} ${s} ${s} ${s} M ${x+w-8-s} ${yy-s} v ${s*2}`,theme,a*.55,ao);}
+  }else if(style.accentPreset==='orbits'){
+    const rx=42+20*motion,ry=14+8*motion;out+=`<g fill="none" stroke="${theme}" stroke-width="${a*.48}" opacity="${ao}"><ellipse cx="${x+95}" cy="${y+45}" rx="${rx}" ry="${ry}" transform="rotate(-12 ${x+95} ${y+45})"/><ellipse cx="${x+w-95}" cy="${y+h-45}" rx="${rx}" ry="${ry}" transform="rotate(-12 ${x+w-95} ${y+h-45})"/><circle cx="${x+95+rx*.65}" cy="${y+38}" r="3" fill="${theme}"/><circle cx="${x+w-95-rx*.65}" cy="${y+h-38}" r="3" fill="${theme}"/></g>`;
+  }else if(style.accentPreset==='spines'){
+    const count=Math.round(7*density),step=22/motion;for(let i=0;i<count;i++){const xx=x+80+i*step;out+=linePath(`M ${xx} ${y+7} l ${6*motion} ${14+8*motion}`,theme,a*.42,ao);const xb=x+w-80-i*step;out+=linePath(`M ${xb} ${y+h-7} l ${-6*motion} ${-14-8*motion}`,theme,a*.42,ao);}
+  }else if(style.accentPreset==='ribbons'){
+    out+=linePath(`M ${x+15} ${y+115} C ${x+80} ${y+80-motion*14} ${x+132} ${y+118+motion*12} ${x+182} ${y+62} S ${x+278} ${y+22} ${x+330} ${y+52}`,theme,a*.65,ao);
+    out+=linePath(`M ${x+w-15} ${y+h-115} C ${x+w-80} ${y+h-80+motion*14} ${x+w-132} ${y+h-118-motion*12} ${x+w-182} ${y+h-62} S ${x+w-278} ${y+h-22} ${x+w-330} ${y+h-52}`,theme,a*.65,ao);
+  }else if(style.accentPreset==='fragments'){
+    const count=Math.round(7*density);for(let i=0;i<count;i++){const t=(i+.5)/count,yy=y+120+t*(h-240),len=8+22*motion*(i%3+1)/3;out+=linePath(`M ${x+8} ${yy} l ${len} ${-len*.35}`,theme,a*(.3+.15*(i%3)),ao*(.55+.08*(i%3)));out+=linePath(`M ${x+w-8} ${yy+14} l ${-len} ${len*.35}`,theme,a*(.3+.15*((i+1)%3)),ao*(.55+.08*((i+1)%3)));}
+  }else{
+    out+=linePath(`M ${x+10} ${y+195} V ${y+310}`,theme,a*.48,ao);out+=linePath(`M ${x+w-10} ${y+195} V ${y+310}`,theme,a*.48,ao);out+=linePath(`M ${x+10} ${y+h-310} V ${y+h-195}`,theme,a*.48,ao);out+=linePath(`M ${x+w-10} ${y+h-310} V ${y+h-195}`,theme,a*.48,ao);
+  }
+  return out;
+}
+function frameSvg(theme:string,style:FrameStyle,layerOpacity:number){return`${frameBaseSvg(theme,style,layerOpacity)}${frameAccentSvg(theme,style,layerOpacity)}`}
+
 function renderSlots(meta:Detail[],layerOpacity:number,theme:string,y:number,x0:number,totalWidth:number,style:TextStyle){
   if(!meta.length||layerOpacity<=0)return'';
   const g=12,sw=(totalWidth-g*(meta.length-1))/meta.length,family=esc(fontStack(style.family));
@@ -182,8 +302,10 @@ function App(){
   const store=useLocalStore(),[card,setCard]=useState<Card>(()=>normalizeCard(store.cards[0]||DEFAULT)),[settingsOpen,setSettingsOpen]=useState(false),inputRef=useRef<HTMLInputElement>(null),markup=useMemo(()=>svg(card),[card]);
   const update=(p:Partial<Card>)=>setCard(normalizeCard({...card,...p}));
   const updateLayer=(key:keyof LayerOpacity,value:number)=>update({layers:{...card.layers,[key]:value}});
-  const updateFrame=(key:keyof FrameStyle,value:number)=>update({frame:{...card.frame,[key]:value}});
+  const updateFrame=(key:keyof FrameStyle,value:FrameStyle[keyof FrameStyle])=>update({frame:{...card.frame,[key]:value}});
   const updateTypography=(role:TextRole,patch:Partial<TextStyle>)=>update({typography:{...card.typography,[role]:{...normalizeTypography(card.typography)[role],...patch}}});
+  const randomizeFrame=()=>update({frame:{...card.frame,framePreset:'random',frameSeed:nextSeed(frame.frameSeed)}});
+  const randomizeAccents=()=>update({frame:{...card.frame,accentPreset:'random',accentSeed:nextSeed(frame.accentSeed)}});
   const save=()=>store.save([...store.cards.filter(c=>c.id!==card.id),card]);
   const resetArt=()=>update({artScale:1,artX:0,artY:0});
   const download=(name:string,blob:Blob)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)};
@@ -220,13 +342,22 @@ function App(){
           <button className="secondary wideButton" onClick={resetArt}>Reset posizione e zoom</button>
         </div></details>
 
-        <details className="settingsGroup"><summary><span><b>Cornice</b><small>Spessore, radius e accenti tema</small></span><i>›</i></summary><div className="settingsBody">
+        <details className="settingsGroup"><summary><span><b>Cornice</b><small>Preset, forme generative e accenti indipendenti</small></span><i>›</i></summary><div className="settingsBody">
+          <label>Tipo cornice<select value={frame.framePreset} onChange={e=>updateFrame('framePreset',e.target.value as FramePreset)}>{frame.framePreset==='random'&&<option value="random">Generata casualmente</option>}{FRAME_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
+          <button className="wideButton" onClick={randomizeFrame}>🎲 Randomize cornice</button>
+          <small>Ogni randomizzazione genera una geometria procedurale nuova, non inclusa nei preset.</small>
           <RangeField label="Spessore bordo" value={frame.size} min={1} max={10} step={.1} onChange={v=>updateFrame('size',v)}/>
           <RangeField label="Radius" value={frame.radius} min={8} max={46} onChange={v=>updateFrame('radius',v)}/>
           <RangeField label="Inset" value={frame.inset} min={4} max={28} onChange={v=>updateFrame('inset',v)}/>
           <OpacityField label="Opacità bordo" value={frame.opacity} onChange={v=>updateFrame('opacity',v)}/>
+          <OpacityField label="Dettaglio / seconda linea" value={frame.frameDetail} onChange={v=>updateFrame('frameDetail',v)}/>
+          <label>Tipo accenti<select value={frame.accentPreset} onChange={e=>updateFrame('accentPreset',e.target.value as AccentPreset)}>{frame.accentPreset==='random'&&<option value="random">Generati casualmente</option>}{ACCENT_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
+          <button className="wideButton" onClick={randomizeAccents}>🎲 Randomize accenti</button>
+          <small>Il random degli accenti è indipendente dalla cornice e crea curve/linee con seed sempre nuovo.</small>
           <RangeField label="Spessore accenti" value={frame.accentSize} min={.5} max={7} step={.1} onChange={v=>updateFrame('accentSize',v)}/>
           <OpacityField label="Opacità accenti" value={frame.accentOpacity} onChange={v=>updateFrame('accentOpacity',v)}/>
+          <RangeField label="Densità accenti" value={frame.accentDensity} min={.5} max={1.8} step={.05} onChange={v=>updateFrame('accentDensity',v)} suffix="×"/>
+          <RangeField label="Movimento / curva" value={frame.accentMotion} min={.2} max={1.8} step={.05} onChange={v=>updateFrame('accentMotion',v)} suffix="×"/>
           <OpacityField label="Opacità layer cornice" value={card.layers?.frame} onChange={v=>updateLayer('frame',v)}/>
         </div></details>
 
