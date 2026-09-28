@@ -1,0 +1,39 @@
+name: Apply terrain editor integration
+
+on:
+  push:
+    branches:
+      - kritoma-terrain-editor
+
+permissions:
+  contents: write
+
+jobs:
+  apply-terrain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: kritoma-terrain-editor
+          fetch-depth: 0
+      - name: Apply terrain editor patch
+        run: python3 .github/scripts/apply-terrain-editor.py
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate build
+        run: |
+          npm install
+          npm run build
+      - name: Commit integration and remove temporary helpers
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-terrain-editor.yml
+          git rm .github/scripts/apply-terrain-editor.py
+          git add src/main.tsx src/TerrainEditor.tsx src/terrain.css
+          git commit -m "Add switchable terrain editor with vector customization"
+          git push origin HEAD:kritoma-terrain-editor
