@@ -1,4 +1,4 @@
-import React,{useMemo,useRef,useState}from'react';
+import React,{useEffect,useMemo,useRef,useState}from'react';
 import{createRoot}from'react-dom/client';
 import jsPDF from'jspdf';
 import'./styles.css';
@@ -36,6 +36,14 @@ const RARITIES:Record<RarityKey,string>={
   gold:'Gold Rare',
   starlight:'Starlight Rare'
 };
+type TiltState={rx:number;ry:number;glareX:number;glareY:number;active:boolean};
+type PreviewFx={glare:number;holo:number;sparkle:number};
+const RARITY_PREVIEW:Record<RarityKey,PreviewFx>={
+  common:{glare:.08,holo:0,sparkle:0},rare:{glare:.22,holo:.07,sparkle:.08},super:{glare:.34,holo:.25,sparkle:.12},
+  ultra:{glare:.42,holo:.32,sparkle:.16},secret:{glare:.50,holo:.46,sparkle:.23},ultimate:{glare:.30,holo:.18,sparkle:.11},
+  ghost:{glare:.38,holo:.12,sparkle:.16},gold:{glare:.48,holo:.20,sparkle:.20},starlight:{glare:.62,holo:.58,sparkle:.34}
+};
+const NEUTRAL_TILT:TiltState={rx:0,ry:0,glareX:50,glareY:42,active:false};
 const DEFAULT_LAYERS:LayerOpacity={frame:1,header:.96,cost:1,meta:.94,effect:.90,stats:.98,id:.98,artwork:1};
 const DEFAULT_FRAME:FrameStyle={
   size:3.2,radius:26,opacity:.92,inset:10,framePreset:'rounded',frameDetail:.72,frameSeed:104729,
@@ -340,7 +348,12 @@ function OpacityField({label,value,onChange}:{label:string;value:number|undefine
 function TypographyControls({label,value,onChange,min,max}:{label:string;value:TextStyle;onChange:(patch:Partial<TextStyle>)=>void;min:number;max:number}){return <><label>{label} — font<select value={value.family} onChange={e=>onChange({family:e.target.value})}>{FONT_OPTIONS.map(font=><option key={font} value={font}>{font}</option>)}</select></label><RangeField label={`${label} — dimensione`} value={value.size} min={min} max={max} step={1} onChange={size=>onChange({size})} suffix=" pt"/></>}
 
 function App(){
-  const store=useLocalStore(),[card,setCard]=useState<Card>(()=>normalizeCard(store.cards[0]||DEFAULT)),[settingsOpen,setSettingsOpen]=useState(false),inputRef=useRef<HTMLInputElement>(null),markup=useMemo(()=>svg(card),[card]);
+  const store=useLocalStore(),[card,setCard]=useState<Card>(()=>normalizeCard(store.cards[0]||DEFAULT)),[settingsOpen,setSettingsOpen]=useState(false);
+  const [foilPreview,setFoilPreview]=useState(()=>localStorage.getItem('kritoma.foilPreview')!=='false');
+  const [reduceMotion,setReduceMotion]=useState(()=>{const saved=localStorage.getItem('kritoma.reduceMotion');return saved!==null?saved==='true':window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false});
+  const [tilt,setTilt]=useState<TiltState>(NEUTRAL_TILT),previewRef=useRef<HTMLDivElement>(null),draggingRef=useRef(false),inputRef=useRef<HTMLInputElement>(null),markup=useMemo(()=>svg(card),[card]);
+  useEffect(()=>{localStorage.setItem('kritoma.foilPreview',String(foilPreview));if(!foilPreview)setTilt(NEUTRAL_TILT)},[foilPreview]);
+  useEffect(()=>{localStorage.setItem('kritoma.reduceMotion',String(reduceMotion))},[reduceMotion]);
   const update=(p:Partial<Card>)=>setCard(normalizeCard({...card,...p}));
   const updateLayer=(key:keyof LayerOpacity,value:number)=>update({layers:{...card.layers,[key]:value}});
   const updateFrame=(key:keyof FrameStyle,value:FrameStyle[keyof FrameStyle])=>update({frame:{...card.frame,[key]:value}});
@@ -354,11 +367,27 @@ function App(){
   const raster=(cb:(canvas:HTMLCanvasElement)=>void)=>{const u=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'})),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=1890;c.height=2640;c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);cb(c);URL.revokeObjectURL(u)};im.src=u};
   const exportPng=()=>raster(c=>c.toBlob(b=>b&&download(`${card.id}.png`,b),'image/png'));
   const exportPdf=()=>raster(c=>{const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:[63,88]});pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,63,88);pdf.save(`${card.id}-print.pdf`)});
-  const frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography);
+  const frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common',previewFx=RARITY_PREVIEW[rarity];
+  const resetTilt=()=>{draggingRef.current=false;setTilt(NEUTRAL_TILT)};
+  const updateTilt=(e:React.PointerEvent<HTMLDivElement>,force=false)=>{
+    if(!foilPreview||(!force&&e.pointerType!=='mouse'&&!draggingRef.current))return;
+    const el=previewRef.current;if(!el)return;const rect=el.getBoundingClientRect();
+    const px=clamp((e.clientX-rect.left)/Math.max(1,rect.width),0,1),py=clamp((e.clientY-rect.top)/Math.max(1,rect.height),0,1);
+    const maxX=reduceMotion?2.5:8,maxY=reduceMotion?3:10;
+    setTilt({rx:(.5-py)*maxX*2,ry:(px-.5)*maxY*2,glareX:px*100,glareY:py*100,active:true});
+  };
+  const handlePointerDown=(e:React.PointerEvent<HTMLDivElement>)=>{if(!foilPreview)return;if(e.pointerType!=='mouse'){draggingRef.current=true;try{e.currentTarget.setPointerCapture(e.pointerId)}catch{}}updateTilt(e,true)};
+  const handlePointerMove=(e:React.PointerEvent<HTMLDivElement>)=>updateTilt(e);
+  const handlePointerUp=(e:React.PointerEvent<HTMLDivElement>)=>{if(e.pointerType!=='mouse'){try{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)}catch{}resetTilt()}};
+  const handlePointerLeave=(e:React.PointerEvent<HTMLDivElement>)=>{if(e.pointerType==='mouse'&&!draggingRef.current)resetTilt()};
+  const previewStyle={
+    '--tilt-rx':`${tilt.rx.toFixed(2)}deg`,'--tilt-ry':`${tilt.ry.toFixed(2)}deg`,'--glare-x':`${tilt.glareX.toFixed(1)}%`,'--glare-y':`${tilt.glareY.toFixed(1)}%`,
+    '--glare-opacity':String(foilPreview?previewFx.glare:0),'--holo-opacity':String(foilPreview?previewFx.holo:0),'--sparkle-opacity':String(foilPreview?previewFx.sparkle:0)
+  } as React.CSSProperties;
 
   return <div className="appShell">
     <header className="topBar"><div className="brand"><span className="brandMark">K</span><div><strong>Kritoma</strong><small>Card Editor</small></div></div><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Modifica</b></button></header>
-    <main className="workspace"><div className="previewWrap"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/></div></main>
+    <main className="workspace"><div className="previewWrap"><div ref={previewRef} className={`interactiveCard rarity-${rarity}${tilt.active?' isActive':''}${foilPreview?'':' isDisabled'}`} style={previewStyle} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={resetTilt} onPointerLeave={handlePointerLeave} aria-label="Anteprima carta interattiva: muovi il mouse o trascina con il dito per simulare i riflessi"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/>{foilPreview&&<div className="foilPreviewLayers" aria-hidden="true"><div className="foilHolo"/><div className="foilSparkle"/><div className="foilGlare"/></div>}</div></div></main>
     <nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>setSettingsOpen(true)}>Impostazioni</button><button onClick={exportPng}>PNG</button><button onClick={exportPdf}>PDF</button></nav>
 
     {settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni carta">
@@ -373,6 +402,7 @@ function App(){
           {card.type!=='token'&&card.type!=='objective'&&<label>Costo / materiali<input value={card.cost||''} onChange={e=>update({cost:e.target.value})}/></label>}
           <label>Rarità<select value={card.rarity||'common'} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
           <small>La rarità applica color grading, foil e dettagli olografici all’intera carta, inclusa l’illustrazione.</small>
+          <div className="previewMotionControls"><label className="toggleRow"><span><b>Preview foil dinamica</b><small>Mouse in hover su desktop; trascina la carta con il dito su mobile.</small></span><input type="checkbox" checked={foilPreview} onChange={e=>setFoilPreview(e.target.checked)}/></label><label className="toggleRow"><span><b>Riduci movimento</b><small>Limita l’inclinazione mantenendo i giochi di luce.</small></span><input type="checkbox" checked={reduceMotion} onChange={e=>setReduceMotion(e.target.checked)}/></label></div>
         </div></details>
 
         <details className="settingsGroup"><summary><span><b>Illustrazione</b><small>Full bleed, posizione e trasparenza</small></span><i>›</i></summary><div className="settingsBody">
