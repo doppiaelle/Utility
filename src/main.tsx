@@ -16,14 +16,26 @@ type FrameStyle={
 type TextRole='cost'|'title'|'meta'|'effect'|'stats';
 type TextStyle={size:number;family:string};
 type TypographyStyle=Record<TextRole,TextStyle>;
+type RarityKey='common'|'rare'|'super'|'ultra'|'secret'|'ultimate'|'ghost'|'gold'|'starlight';
 type Card={
-  id:string;type:CardType;name:string;scope:string;scopeColor:string;cost?:string;rarity?:string;
+  id:string;type:CardType;name:string;scope:string;scopeColor:string;cost?:string;rarity?:RarityKey;
   meta:Detail[];effects:Detail[];stats:Stat[];art?:string;
   artScale?:number;artX?:number;artY?:number;layers?:Partial<LayerOpacity>;frame?:Partial<FrameStyle>;
   typography?:Partial<Record<TextRole,Partial<TextStyle>>>;
 };
 
 const TYPES:Record<CardType,string>={fighter:'Combattente',location:'Luogo',action:'Azione',extraFighter:'ExtraCombattente',objective:'Obiettivo',token:'Token'};
+const RARITIES:Record<RarityKey,string>={
+  common:'Comune',
+  rare:'Rare',
+  super:'Super Rare',
+  ultra:'Ultra Rare',
+  secret:'Secret Rare',
+  ultimate:'Ultimate Rare',
+  ghost:'Ghost Rare',
+  gold:'Gold Rare',
+  starlight:'Starlight Rare'
+};
 const DEFAULT_LAYERS:LayerOpacity={frame:1,header:.96,cost:1,meta:.94,effect:.90,stats:.98,id:.98,artwork:1};
 const DEFAULT_FRAME:FrameStyle={
   size:3.2,radius:26,opacity:.92,inset:10,framePreset:'rounded',frameDetail:.72,frameSeed:104729,
@@ -74,7 +86,7 @@ const FONT_STACKS:Record<string,string>={
   'Courier New':'Courier New, Courier, monospace'
 };
 const DEFAULT:Card={
-  id:'KRT-001',type:'fighter',name:'Nome Carta',scope:'Informatica',scopeColor:'#1d5c6b',cost:'',rarity:'',
+  id:'KRT-001',type:'fighter',name:'Nome Carta',scope:'Informatica',scopeColor:'#1d5c6b',cost:'',rarity:'common',
   meta:[{label:'',value:'Archetipo',opacity:1},{label:'',value:'Tipo',opacity:1}],
   effects:[{label:'EFFETTO',value:'Testo effetto della carta.',opacity:1}],
   stats:[{kind:'ATK',value:'',opacity:1},{kind:'RES',value:'',opacity:1},{kind:'PRF',value:'',opacity:1}],
@@ -100,6 +112,7 @@ const wrapByWidth=(text:string,maxWidth:number,fontSize:number,maxLines=9)=>{
   if(line&&out.length<maxLines)out.push(line);
   return out;
 };
+const isRarity=(value:any):value is RarityKey=>typeof value==='string'&&value in RARITIES;
 function normalizeTypography(input:any):TypographyStyle{return{
   cost:{...DEFAULT_TYPOGRAPHY.cost,...(input?.cost||{})},
   title:{...DEFAULT_TYPOGRAPHY.title,...(input?.title||{})},
@@ -126,10 +139,34 @@ function statIcon(kind:string,x:number,y:number){
   return`${start}<path d="M0-11 3-3 11 0 3 3 0 11-3 3-11 0-3-3Z"/>${end}`;
 }
 
+const sparkle=(x:number,y:number,scale=1,opacity=.8,color='#ffffff')=>`<g transform="translate(${x} ${y}) scale(${scale})" opacity="${opacity}"><path d="M0-10 2.5-2.5 10 0 2.5 2.5 0 10-2.5 2.5-10 0-2.5-2.5Z" fill="${color}"/><circle cx="0" cy="0" r="1.3" fill="#ffffff"/></g>`;
+function rarityDefs(){return`
+  <linearGradient id="rareSilver" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffffff" stop-opacity="0"/><stop offset="35%" stop-color="#f7fbff" stop-opacity=".45"/><stop offset="70%" stop-color="#dbe8f6" stop-opacity=".2"/><stop offset="100%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="holoAurora" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#62d7ff" stop-opacity="0"/><stop offset="18%" stop-color="#62d7ff" stop-opacity=".22"/><stop offset="38%" stop-color="#8d7cff" stop-opacity=".24"/><stop offset="56%" stop-color="#ff85c7" stop-opacity=".24"/><stop offset="74%" stop-color="#ffe176" stop-opacity=".22"/><stop offset="90%" stop-color="#78ffc9" stop-opacity=".18"/><stop offset="100%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="goldFoil" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#fff5bf" stop-opacity=".06"/><stop offset="30%" stop-color="#f6cf62" stop-opacity=".28"/><stop offset="55%" stop-color="#fff6d0" stop-opacity=".18"/><stop offset="100%" stop-color="#c99212" stop-opacity=".08"/></linearGradient>
+  <linearGradient id="bronzeFoil" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f8d39b" stop-opacity=".06"/><stop offset="30%" stop-color="#c98a42" stop-opacity=".22"/><stop offset="100%" stop-color="#6c4118" stop-opacity=".08"/></linearGradient>
+  <linearGradient id="ghostMist" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f4fbff" stop-opacity=".30"/><stop offset="45%" stop-color="#ddf3ff" stop-opacity=".16"/><stop offset="100%" stop-color="#fefeff" stop-opacity=".26"/></linearGradient>
+  <linearGradient id="softSheen" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#ffffff" stop-opacity="0"/><stop offset="35%" stop-color="#ffffff" stop-opacity=".24"/><stop offset="58%" stop-color="#c1f6ff" stop-opacity=".18"/><stop offset="100%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="prismaticStroke" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#9de9ff"/><stop offset="28%" stop-color="#ffffff"/><stop offset="52%" stop-color="#ffc6ed"/><stop offset="76%" stop-color="#fff09b"/><stop offset="100%" stop-color="#8fe2ff"/></linearGradient>
+  <pattern id="secretFoilPattern" patternUnits="userSpaceOnUse" width="28" height="28" patternTransform="rotate(-28)"><rect width="28" height="28" fill="#ffffff" fill-opacity=".012"/><path d="M4 -4V32 M14 -4V32 M24 -4V32" stroke="#8ad6ff" stroke-opacity=".34" stroke-width="1.8"/><path d="M9 -4V32 M19 -4V32" stroke="#ff8cc6" stroke-opacity=".30" stroke-width="1.1"/><path d="M0 -4V32" stroke="#fff6a8" stroke-opacity=".20" stroke-width=".8"/></pattern>
+  <pattern id="ultimatePattern" patternUnits="userSpaceOnUse" width="96" height="96"><rect width="96" height="96" fill="#ffffff" fill-opacity="0"/><circle cx="48" cy="48" r="21" fill="none" stroke="#f2d1a4" stroke-opacity=".20" stroke-width="2"/><path d="M0 30 C 24 8, 72 8, 96 30 M0 66 C 24 44, 72 44, 96 66" fill="none" stroke="#f2d1a4" stroke-opacity=".18" stroke-width="2"/><path d="M18 0 C 6 18, 6 78, 18 96 M78 0 C 90 18, 90 78, 78 96" fill="none" stroke="#f2d1a4" stroke-opacity=".16" stroke-width="1.5"/></pattern>
+  <pattern id="starlightPattern" patternUnits="userSpaceOnUse" width="72" height="72"><rect width="72" height="72" fill="#ffffff" fill-opacity="0"/><circle cx="12" cy="14" r="1.8" fill="#ffffff" fill-opacity=".55"/><circle cx="54" cy="20" r="1.5" fill="#9de9ff" fill-opacity=".5"/><circle cx="26" cy="54" r="1.2" fill="#ffeeb4" fill-opacity=".42"/><path d="M36 8 38 14 44 16 38 18 36 24 34 18 28 16 34 14Z" fill="#ffffff" fill-opacity=".52"/><path d="M58 42 59.5 46 64 47.5 59.5 49 58 53 56.5 49 52 47.5 56.5 46Z" fill="#ffd7ef" fill-opacity=".45"/><path d="M14 40 15.5 44 20 45.5 15.5 47 14 51 12.5 47 8 45.5 12.5 44Z" fill="#c6f7ff" fill-opacity=".45"/></pattern>
+  <pattern id="goldDustPattern" patternUnits="userSpaceOnUse" width="52" height="52"><rect width="52" height="52" fill="#ffffff" fill-opacity="0"/><circle cx="9" cy="10" r="1.4" fill="#fff3ae" fill-opacity=".55"/><circle cx="38" cy="16" r="1.2" fill="#fff3ae" fill-opacity=".45"/><circle cx="19" cy="38" r="1.1" fill="#f6cf62" fill-opacity=".50"/><path d="M42 34 43.2 37.6 47 38.8 43.2 40 42 43.6 40.8 40 37 38.8 40.8 37.6Z" fill="#fff8d2" fill-opacity=".42"/></pattern>
+  <filter id="art-rare" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.08"/><feComponentTransfer><feFuncR type="linear" slope="1.02"/><feFuncG type="linear" slope="1.02"/><feFuncB type="linear" slope="1.04"/></feComponentTransfer></filter>
+  <filter id="art-super" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.18"/><feComponentTransfer><feFuncR type="linear" slope="1.04"/><feFuncG type="linear" slope="1.04"/><feFuncB type="linear" slope="1.08"/></feComponentTransfer></filter>
+  <filter id="art-ultra" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.24"/><feComponentTransfer><feFuncR type="linear" slope="1.08"/><feFuncG type="linear" slope="1.06"/><feFuncB type="linear" slope="1.04"/></feComponentTransfer></filter>
+  <filter id="art-secret" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.30"/><feComponentTransfer><feFuncR type="linear" slope="1.08"/><feFuncG type="linear" slope="1.06"/><feFuncB type="linear" slope="1.10"/></feComponentTransfer></filter>
+  <filter id="art-ultimate" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.14"/><feComponentTransfer><feFuncR type="linear" slope="1.10"/><feFuncG type="linear" slope="1.02"/><feFuncB type="linear" slope=".95"/></feComponentTransfer></filter>
+  <filter id="art-ghost" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values=".24"/><feComponentTransfer><feFuncR type="linear" slope="1.16" intercept=".05"/><feFuncG type="linear" slope="1.18" intercept=".06"/><feFuncB type="linear" slope="1.22" intercept=".08"/></feComponentTransfer></filter>
+  <filter id="art-gold" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.12"/><feComponentTransfer><feFuncR type="linear" slope="1.18"/><feFuncG type="linear" slope="1.10"/><feFuncB type="linear" slope=".92"/></feComponentTransfer></filter>
+  <filter id="art-starlight" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="1.34"/><feComponentTransfer><feFuncR type="linear" slope="1.10"/><feFuncG type="linear" slope="1.08"/><feFuncB type="linear" slope="1.12"/></feComponentTransfer></filter>`;}
+function renderRarityArtOverlay(rarity:RarityKey){switch(rarity){case'rare':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#rareSilver)" opacity=".08"/><rect x="20" y="20" width="590" height="840" fill="url(#softSheen)" opacity=".06"/></g>`;case'super':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#holoAurora)" opacity=".15"/><rect x="20" y="20" width="590" height="840" fill="url(#softSheen)" opacity=".11"/></g>`;case'ultra':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#goldFoil)" opacity=".12"/><rect x="20" y="20" width="590" height="840" fill="url(#holoAurora)" opacity=".14"/></g>`;case'secret':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#holoAurora)" opacity=".12"/><rect x="20" y="20" width="590" height="840" fill="url(#secretFoilPattern)" opacity=".28"/></g>`;case'ultimate':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#bronzeFoil)" opacity=".18"/><rect x="20" y="20" width="590" height="840" fill="url(#ultimatePattern)" opacity=".24"/></g>`;case'ghost':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#ghostMist)" opacity=".30"/><rect x="20" y="20" width="590" height="840" fill="url(#softSheen)" opacity=".12"/></g>`;case'gold':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#goldFoil)" opacity=".20"/><rect x="20" y="20" width="590" height="840" fill="url(#goldDustPattern)" opacity=".24"/></g>`;case'starlight':return`<g clip-path="url(#cardClip)"><rect x="20" y="20" width="590" height="840" fill="url(#holoAurora)" opacity=".18"/><rect x="20" y="20" width="590" height="840" fill="url(#starlightPattern)" opacity=".34"/></g>`;default:return'';}}
+function renderRaritySurface(rarity:RarityKey){switch(rarity){case'rare':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="27" y="27" width="576" height="826" rx="24" fill="none" stroke="#dde7f3" stroke-opacity=".46" stroke-width="1.8"/>${sparkle(92,112,.75,.70)}${sparkle(534,146,.58,.55)}${sparkle(474,642,.68,.50,'#dfeeff')}</g>`;case'super':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="26" y="26" width="578" height="828" rx="24" fill="none" stroke="url(#prismaticStroke)" stroke-opacity=".28" stroke-width="1.8"/>${sparkle(98,110,.82,.78)}${sparkle(530,144,.72,.64,'#dff6ff')}${sparkle(120,704,.64,.48,'#ffd8ef')}</g>`;case'ultra':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="25" y="25" width="580" height="830" rx="25" fill="none" stroke="#f6d577" stroke-opacity=".64" stroke-width="2.1"/><rect x="31" y="31" width="568" height="818" rx="21" fill="none" stroke="#fff5c2" stroke-opacity=".28" stroke-width="1"/>${sparkle(92,110,.90,.86,'#fff4ba')}${sparkle(534,146,.76,.70,'#fff8d5')}${sparkle(483,638,.74,.58,'#ffe3ac')}</g>`;case'secret':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="26" y="26" width="578" height="828" rx="24" fill="url(#secretFoilPattern)" opacity=".16"/><rect x="26" y="26" width="578" height="828" rx="24" fill="none" stroke="url(#prismaticStroke)" stroke-opacity=".32" stroke-width="1.7"/>${sparkle(92,112,.82,.82)}${sparkle(534,144,.74,.68,'#dff7ff')}${sparkle(302,740,.68,.50,'#ffd5ea')}</g>`;case'ultimate':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="24" y="24" width="582" height="832" rx="26" fill="url(#ultimatePattern)" opacity=".18"/><rect x="26" y="26" width="578" height="828" rx="24" fill="none" stroke="#d0a067" stroke-opacity=".48" stroke-width="1.9"/>${sparkle(112,128,.64,.44,'#f3d2a8')}</g>`;case'ghost':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="20" y="20" width="590" height="840" fill="#eefaff" fill-opacity=".07"/><rect x="26" y="26" width="578" height="828" rx="24" fill="none" stroke="#f8fdff" stroke-opacity=".52" stroke-width="1.8"/>${sparkle(94,114,.84,.74)}${sparkle(530,144,.70,.62,'#edfaff')}${sparkle(470,770,.64,.44,'#f3ffff')}</g>`;case'gold':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="24" y="24" width="582" height="832" rx="25" fill="url(#goldDustPattern)" opacity=".26"/><rect x="25" y="25" width="580" height="830" rx="25" fill="none" stroke="#e9bd47" stroke-opacity=".66" stroke-width="2.2"/><rect x="31" y="31" width="568" height="818" rx="21" fill="none" stroke="#fff2ba" stroke-opacity=".30" stroke-width="1"/>${sparkle(90,112,.90,.84,'#fff1a8')}${sparkle(536,146,.76,.72,'#fff7d3')}</g>`;case'starlight':return`<g clip-path="url(#cardClip)" pointer-events="none"><rect x="20" y="20" width="590" height="840" fill="url(#starlightPattern)" opacity=".38"/><rect x="26" y="26" width="578" height="828" rx="24" fill="none" stroke="url(#prismaticStroke)" stroke-opacity=".42" stroke-width="1.8"/>${sparkle(94,110,.98,.88)}${sparkle(536,144,.80,.74,'#dff6ff')}${sparkle(132,698,.72,.58,'#ffdff2')}${sparkle(486,636,.70,.54,'#fff3b6')}</g>`;default:return'';}}
+
 function normalizeDetail(x:Detail):Detail{return{...x,opacity:clamp01(x.opacity,1)}}
 function normalizeStat(x:Stat):Stat{return{...x,opacity:clamp01(x.opacity,1)}}
 function normalizeCard(c:Card):Card{const legacy:any=c||{};return{
-  ...DEFAULT,...legacy,
+  ...DEFAULT,...legacy,rarity:isRarity(legacy.rarity)?legacy.rarity:'common',
   meta:(legacy.meta??DEFAULT.meta).map(normalizeDetail),effects:(legacy.effects??DEFAULT.effects).map(normalizeDetail),stats:(legacy.stats??DEFAULT.stats).map(normalizeStat),
   artScale:Number.isFinite(legacy.artScale)?legacy.artScale:1,artX:Number.isFinite(legacy.artX)?legacy.artX:0,artY:Number.isFinite(legacy.artY)?legacy.artY:0,
   layers:{...DEFAULT_LAYERS,...(legacy.layers||{})},frame:{...DEFAULT_FRAME,...(legacy.frame||{})},typography:normalizeTypography(legacy.typography)
@@ -269,9 +306,10 @@ function renderStats(stats:Stat[],id:string,statsOpacity:number,idOpacity:number
 }
 
 function svg(card:Card){
-  const theme=card.scopeColor||'#1d5c6b',layers={...DEFAULT_LAYERS,...card.layers},frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography);
+  const theme=card.scopeColor||'#1d5c6b',layers={...DEFAULT_LAYERS,...card.layers},frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common';
   const scale=clamp(card.artScale??1,.4,3.5),ox=card.artX??0,oy=card.artY??0,baseX=20,baseY=20,baseW=590,baseH=840,iw=baseW*scale,ih=baseH*scale,ix=baseX-(iw-baseW)/2+ox,iy=baseY-(ih-baseH)/2+oy;
-  const art=card.art?`<image href="${card.art}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cardClip)" opacity="${clamp01(layers.artwork,1)}"/>`:`<rect x="20" y="20" width="590" height="840" rx="28" fill="#18232b" opacity=".9"/>`;
+  const artFilter=rarity!=='common'?` filter="url(#art-${rarity})"`:'';
+  const art=card.art?`<image href="${card.art}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cardClip)" opacity="${clamp01(layers.artwork,1)}"${artFilter}/>`:`<rect x="20" y="20" width="590" height="840" rx="28" fill="#18232b" opacity=".9"/>`;
   const costVisible=card.type!=='token'&&card.type!=='objective',frameO=clamp01(layers.frame,1),headerO=clamp01(layers.header,1),costO=clamp01(layers.cost,1),metaO=clamp01(layers.meta,1),effectO=clamp01(layers.effect,1),statsO=clamp01(layers.stats,1),idO=clamp01(layers.id,1);
   const contentX=clamp(52+frame.inset*.55+frame.size*.45,58,74),contentW=630-contentX*2,headerH=72,headerY=clamp(43+frame.inset*.30+frame.size*.25,47,58),headerCy=headerY+headerH/2,costR=38,costCx=contentX+25;
   const headerX=costVisible?costCx+49:contentX,headerRight=630-contentX,headerW=headerRight-headerX,diamondX=headerRight-28,titleX=headerX+28,titleMax=Math.max(80,diamondX-titleX-29);
@@ -283,14 +321,17 @@ function svg(card:Card){
     <clipPath id="cardClip"><rect x="20" y="20" width="590" height="840" rx="28"/></clipPath>
     <linearGradient id="paperGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f4ede2"/><stop offset="100%" stop-color="#e6ddcf"/></linearGradient>
     <filter id="paperNoise" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="5" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m" result="f"><feFuncA type="table" tableValues="0 .08"/></feComponentTransfer><feBlend in="SourceGraphic" in2="f" mode="multiply"/></filter>
+    ${rarityDefs()}
   </defs>
   <rect width="630" height="880" fill="#fff"/>${art}
+  ${renderRarityArtOverlay(rarity)}
   ${frameSvg(theme,frame,frameO)}
   <g opacity="${headerO}"><rect x="${headerX}" y="${headerY}" width="${headerW}" height="${headerH}" rx="24" fill="url(#paperGrad)" fill-opacity=".92" filter="url(#paperNoise)" stroke="#efe6d8" stroke-width="1.4"/><rect x="${headerX+5}" y="${headerY+5}" width="${headerW-10}" height="${headerH-10}" rx="20" fill="none" stroke="${theme}" stroke-width="1.8" opacity=".9"/><text x="${titleX}" y="${headerCy}" dominant-baseline="middle" fill="#213749" font-size="${titleSize.toFixed(2)}" font-family="${titleFamily}" font-weight="700">${esc(card.name)}</text>${diamond(theme,diamondX,headerCy)}</g>
   ${costVisible?`<g opacity="${costO}"><circle cx="${costCx}" cy="${headerCy}" r="${costR}" fill="#0b1720" stroke="${theme}" stroke-width="2.4"/><circle cx="${costCx}" cy="${headerCy}" r="31.5" fill="url(#paperGrad)" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.5"/><circle cx="${costCx}" cy="${headerCy}" r="28" fill="none" stroke="#173040" stroke-width="1.5"/><text x="${costCx}" y="${headerCy}" dominant-baseline="middle" text-anchor="middle" fill="#173040" font-size="${costSize.toFixed(2)}" font-family="${costFamily}" font-weight="700">${esc(card.cost||'')}</text></g>`:''}
   ${renderSlots(card.meta,metaO,theme,metaY,contentX,contentW,typography.meta)}
   ${hasEffects?`<g opacity="${effectO}"><rect x="${contentX}" y="${effectY}" width="${contentW}" height="${effectH}" rx="18" fill="url(#paperGrad)" fill-opacity=".78" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.2"/><rect x="${contentX+5}" y="${effectY+5}" width="${contentW-10}" height="${effectH-10}" rx="14" fill="none" stroke="#173040" stroke-width="1.4" opacity=".92"/>${renderEffects(card.effects,effectY,contentX,contentW,effectH,typography.effect)}</g>`:''}
   ${statNodes}${idNode}
+  ${renderRaritySurface(rarity)}
   </svg>`;
 }
 
@@ -324,12 +365,14 @@ function App(){
       <div className="sheetHandle"/>
       <header className="sheetHeader"><div><strong>Impostazioni carta</strong><small>Le modifiche aggiornano la preview in tempo reale</small></div><button className="closeButton" onClick={()=>setSettingsOpen(false)}>Fatto</button></header>
       <div className="settingsScroll">
-        <details className="settingsGroup" open><summary><span><b>Carta</b><small>Tipo, nome, ambito e identificazione</small></span><i>›</i></summary><div className="settingsBody">
+        <details className="settingsGroup" open><summary><span><b>Carta</b><small>Tipo, nome, ambito, rarità e identificazione</small></span><i>›</i></summary><div className="settingsBody">
           <label>Tipologia<select value={card.type} onChange={e=>setCard(preset(e.target.value as CardType))}>{Object.entries(TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
           <label>Nome<input value={card.name} onChange={e=>update({name:e.target.value})}/></label>
           <div className="fieldGrid"><label>ID<input value={card.id} onChange={e=>update({id:e.target.value})}/></label><label>Ambito<select value={card.scope} onChange={e=>update({scope:e.target.value,scopeColor:scopeDefault[e.target.value]||card.scopeColor})}>{Object.keys(scopeDefault).map(x=><option key={x}>{x}</option>)}</select></label></div>
           <label className="colorRow"><span>Colore tema</span><input type="color" value={card.scopeColor} onChange={e=>update({scopeColor:e.target.value})}/></label>
           {card.type!=='token'&&card.type!=='objective'&&<label>Costo / materiali<input value={card.cost||''} onChange={e=>update({cost:e.target.value})}/></label>}
+          <label>Rarità<select value={card.rarity||'common'} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
+          <small>La rarità applica color grading, foil e dettagli olografici all’intera carta, inclusa l’illustrazione.</small>
         </div></details>
 
         <details className="settingsGroup"><summary><span><b>Illustrazione</b><small>Full bleed, posizione e trasparenza</small></span><i>›</i></summary><div className="settingsBody">
