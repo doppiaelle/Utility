@@ -1,0 +1,42 @@
+name: Apply rarity feature patch
+
+on:
+  push:
+    branches:
+      - kritoma-rarity-foil-effects
+
+permissions:
+  contents: write
+
+jobs:
+  apply-rarity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply rarity feature
+        run: python scripts/apply_rarity_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate build
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund
+          npm run build
+          git checkout -- package.json package-lock.json 2>/dev/null || true
+
+      - name: Commit generated implementation and cleanup
+        run: |
+          rm scripts/apply_rarity_patch.py
+          rm .github/workflows/apply-rarity.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add card rarity foil and holographic effects"
+          git push origin HEAD:kritoma-rarity-foil-effects
