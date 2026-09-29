@@ -44,6 +44,19 @@ type SlotOverride={enabled:boolean;custom:boolean;style:SlotStyle};
 type FourSlotGroup={enabled:boolean;scale:number;gap:number;offsetX:number;offsetY:number;style:SlotStyle;slots:[SlotOverride,SlotOverride,SlotOverride,SlotOverride]};
 type CenterSlotGroup={enabled:boolean;scale:number;gap12:number;gap23:number;offsetX:number;offsetY:number;style:SlotStyle;slots:[SlotOverride,SlotOverride,SlotOverride]};
 
+type TerrainLayout={
+  edgeInsetX:number;
+  edgeInsetY:number;
+  contentPaddingX:number;
+  contentPaddingTop:number;
+  contentPaddingBottom:number;
+  topGapX:number;
+  rowGap:number;
+  topLeftHeight:number;
+  topRightHeight:number;
+  lowerHeight:number;
+};
+
 type TerrainState={
   id:string;
   name:string;
@@ -52,6 +65,7 @@ type TerrainState={
   backgroundColor:string;
   textColor:string;
   sheenEnabled:boolean;
+  layout:TerrainLayout;
   outer:AreaStyle;
   inner:AreaStyle;
   guide:AreaStyle;
@@ -110,6 +124,7 @@ const makeThreeSlots=():[SlotOverride,SlotOverride,SlotOverride]=>[makeOverride(
 const DEFAULT_TERRAIN:TerrainState={
   id:'KRT-FIELD-001',name:'Terreno Kritoma',printWidthMm:610,printHeightMm:350,
   backgroundColor:'#18110e',textColor:'#b88b6a',sheenEnabled:true,
+  layout:{edgeInsetX:26,edgeInsetY:13,contentPaddingX:22,contentPaddingTop:31,contentPaddingBottom:69,topGapX:56,rowGap:36,topLeftHeight:260,topRightHeight:260,lowerHeight:370},
   outer:{enabled:true,fillEnabled:true,borderEnabled:true,detailEnabled:true,preset:'rounded',fillColor:'#18110e',borderColor:'#6b4d3f',accentColor:'#b37a58',borderWidth:3.2,radius:30,inset:8,detailInset:24,fillOpacity:1,borderOpacity:.95,detailOpacity:.72},
   inner:{enabled:true,fillEnabled:true,borderEnabled:true,detailEnabled:true,preset:'rounded',fillColor:'#191511',borderColor:'#6b4d3f',accentColor:'#b37a58',borderWidth:2.3,radius:24,inset:34,detailInset:20,fillOpacity:1,borderOpacity:.70,detailOpacity:.46},
   guide:{enabled:true,fillEnabled:false,borderEnabled:true,detailEnabled:false,preset:'rounded',fillColor:'#191511',borderColor:'#b37a58',accentColor:'#b37a58',borderWidth:1.15,radius:19,inset:22,detailInset:12,fillOpacity:.16,borderOpacity:.42,detailOpacity:.25},
@@ -178,6 +193,15 @@ function normalizeCenterGroup(raw:any,fallback:CenterSlotGroup):CenterSlotGroup{
   const style=normalizeSlotStyle(raw?.style,fallback.style),slots=Array.from({length:3},(_,i)=>normalizeOverride(raw?.slots?.[i],style)) as [SlotOverride,SlotOverride,SlotOverride];
   return{enabled:raw?.enabled!==false,scale:clamp(Number(raw?.scale) || fallback.scale,.72,1.22),gap12:clamp(Number(raw?.gap12) || fallback.gap12,.4,2.4),gap23:clamp(Number(raw?.gap23) || fallback.gap23,.4,2.4),offsetX:clamp(Number(raw?.offsetX) || 0,-180,180),offsetY:clamp(Number(raw?.offsetY) || 0,-100,100),style,slots};
 }
+function normalizeLayout(raw:any):TerrainLayout{
+  const l={...DEFAULT_TERRAIN.layout,...(raw||{})};
+  return{
+    edgeInsetX:clamp(Number(l.edgeInsetX)??26,0,140),edgeInsetY:clamp(Number(l.edgeInsetY)??13,0,120),
+    contentPaddingX:clamp(Number(l.contentPaddingX)??22,0,180),contentPaddingTop:clamp(Number(l.contentPaddingTop)??31,0,180),contentPaddingBottom:clamp(Number(l.contentPaddingBottom)??69,0,220),
+    topGapX:clamp(Number(l.topGapX)??56,0,220),rowGap:clamp(Number(l.rowGap)??36,0,220),
+    topLeftHeight:clamp(Number(l.topLeftHeight)??260,80,700),topRightHeight:clamp(Number(l.topRightHeight)??260,80,700),lowerHeight:clamp(Number(l.lowerHeight)??370,100,760)
+  };
+}
 function normalizeTerrain(input:any):TerrainState{
   const legacy=input||{};
   const legacySlot:SlotStyle={...BASE_SLOT_STYLE,preset:legacy.slotPreset||BASE_SLOT_STYLE.preset,fillColor:legacy.slotColor||BASE_SLOT_STYLE.fillColor,borderColor:legacy.borderColor||BASE_SLOT_STYLE.borderColor,accentColor:legacy.accentColor||BASE_SLOT_STYLE.accentColor,borderWidth:legacy.slotWidth??BASE_SLOT_STYLE.borderWidth,radius:legacy.slotRadius??BASE_SLOT_STYLE.radius,detailInset:legacy.slotInset??BASE_SLOT_STYLE.detailInset,detailOpacity:legacy.slotDetail??BASE_SLOT_STYLE.detailOpacity,fillOpacity:legacy.slotFillOpacity??BASE_SLOT_STYLE.fillOpacity};
@@ -188,6 +212,7 @@ function normalizeTerrain(input:any):TerrainState{
     id:String(legacy.id||DEFAULT_TERRAIN.id),name:String(legacy.name||DEFAULT_TERRAIN.name),
     printWidthMm:clamp(Number(legacy.printWidthMm)||610,200,1200),printHeightMm:clamp(Number(legacy.printHeightMm)||350,150,800),
     backgroundColor:legacy.backgroundColor||legacy.outerColor||DEFAULT_TERRAIN.backgroundColor,textColor:legacy.textColor||DEFAULT_TERRAIN.textColor,sheenEnabled:legacy.sheenEnabled!==false,
+    layout:normalizeLayout(legacy.layout),
     outer:normalizeArea(legacy.outer,{...DEFAULT_TERRAIN.outer,fillColor:legacy.outerColor||DEFAULT_TERRAIN.outer.fillColor,borderColor:legacy.borderColor||DEFAULT_TERRAIN.outer.borderColor,accentColor:legacy.accentColor||DEFAULT_TERRAIN.outer.accentColor,borderWidth:legacy.perimeterWidth??DEFAULT_TERRAIN.outer.borderWidth,radius:legacy.perimeterRadius??DEFAULT_TERRAIN.outer.radius,detailOpacity:legacy.perimeterDetail??DEFAULT_TERRAIN.outer.detailOpacity}),
     inner:normalizeArea(legacy.inner,{...DEFAULT_TERRAIN.inner,fillColor:legacy.fieldColor||DEFAULT_TERRAIN.inner.fillColor,borderColor:legacy.borderColor||DEFAULT_TERRAIN.inner.borderColor,accentColor:legacy.accentColor||DEFAULT_TERRAIN.inner.accentColor}),
     guide:normalizeArea(legacy.guide,{...DEFAULT_TERRAIN.guide,borderColor:legacy.accentColor||DEFAULT_TERRAIN.guide.borderColor,accentColor:legacy.accentColor||DEFAULT_TERRAIN.guide.accentColor}),
@@ -219,26 +244,86 @@ function renderSlot(x:number,y:number,w:number,h:number,style:SlotStyle,state:Te
 function effectiveSlot(base:SlotStyle,override:SlotOverride){return override.custom?override.style:base}
 
 function terrainSvg(state:TerrainState){
-  const W=1600,H=920;
-  const outerInset=26+state.outer.inset,x=outerInset,y=16+state.outer.inset*.65,w=W-outerInset*2,h=H-(32+state.outer.inset*1.3);
-  const innerInset=state.inner.inset,ix=x+innerInset,iy=y+innerInset,iw=w-innerInset*2,ih=h-innerInset*2;
-  const guideInset=state.guide.inset,gx=ix+guideInset,gy=iy+guideInset,gw=iw-guideInset*2,gh=ih-guideInset*2;
-  const topY=108,topH=260,topW=660,leftX=112,rightX=828,lowerX=112,lowerY=404,lowerW=1376,lowerH=370;
-  const renderPanel=(style:AreaStyle,px:number,py:number,pw:number,ph:number)=>{const inset=style.inset;return renderArea(style,px+inset,py+inset,pw-inset*2,ph-inset*2)};
-  const renderFour=(group:FourSlotGroup,panelX:number)=>{
-    if(!group.enabled)return'';
-    const sw=140*group.scale,sh=200*group.scale,gap=14*group.gap,total=sw*4+gap*3,start=panelX+(topW-total)/2+group.offsetX,sy=topY+(topH-sh)/2+group.offsetY;
-    return group.slots.map((slot,i)=>slot.enabled?renderSlot(start+i*(sw+gap),sy,sw,sh,effectiveSlot(group.style,slot),state):'').join('');
+  const W=1600,H=920,L=state.layout;
+  type Rect={x:number;y:number;w:number;h:number};
+  const insetRect=(r:Rect,n:number):Rect=>{const q=clamp(n,0,Math.max(0,Math.min(r.w,r.h)/2-2));return{x:r.x+q,y:r.y+q,w:Math.max(4,r.w-q*2),h:Math.max(4,r.h-q*2)}};
+  const panelRect=(style:AreaStyle,box:Rect|null):Rect|null=>box?insetRect(box,style.inset):null;
+
+  // Onion layout: only enabled layers consume geometric space. When one disappears,
+  // every enabled descendant starts from the previous real parent and expands outward.
+  const base:Rect={x:L.edgeInsetX,y:L.edgeInsetY,w:Math.max(20,W-L.edgeInsetX*2),h:Math.max(20,H-L.edgeInsetY*2)};
+  const onion:{style:AreaStyle;rect:Rect}[]=[];
+  let cursor=base;
+  ([state.outer,state.inner,state.guide] as AreaStyle[]).forEach(style=>{
+    if(!style.enabled)return;
+    cursor=insetRect(cursor,style.inset);
+    onion.push({style,rect:cursor});
+  });
+  const deepest=onion.length?onion[onion.length-1].rect:base;
+  const shell=onion.length?onion[0]:null;
+  const padX=Math.min(L.contentPaddingX,deepest.w*.28),padTop=Math.min(L.contentPaddingTop,deepest.h*.28),padBottom=Math.min(L.contentPaddingBottom,deepest.h*.32);
+  const content:Rect={x:deepest.x+padX,y:deepest.y+padTop,w:Math.max(40,deepest.w-padX*2),h:Math.max(40,deepest.h-padTop-padBottom)};
+
+  // Macro sections use a flow layout. Desired heights act as proportions; the rows
+  // always consume the full available content height. Disabled rows consume 0 px.
+  const leftOn=state.topLeftPanel.enabled,rightOn=state.topRightPanel.enabled,topOn=leftOn||rightOn,lowerOn=state.lowerPanel.enabled;
+  const rowGap=topOn&&lowerOn?Math.min(L.rowGap,content.h*.35):0;
+  const usableH=Math.max(30,content.h-rowGap);
+  const desiredTop=Math.max(leftOn?L.topLeftHeight:0,rightOn?L.topRightHeight:0,80),desiredLower=Math.max(100,L.lowerHeight);
+  let topRowH=0,lowerH=0;
+  if(topOn&&lowerOn){const total=desiredTop+desiredLower;topRowH=usableH*(desiredTop/total);lowerH=usableH-topRowH}
+  else if(topOn)topRowH=content.h;
+  else if(lowerOn)lowerH=content.h;
+
+  const colGap=leftOn&&rightOn?Math.min(L.topGapX,content.w*.35):0;
+  const colW=leftOn&&rightOn?(content.w-colGap)/2:content.w;
+  const leftH=leftOn?(rightOn?topRowH*Math.min(1,L.topLeftHeight/desiredTop):topRowH):0;
+  const rightH=rightOn?(leftOn?topRowH*Math.min(1,L.topRightHeight/desiredTop):topRowH):0;
+  const leftBox:Rect|null=leftOn?{x:content.x,y:content.y,w:colW,h:leftH}:null;
+  const rightBox:Rect|null=rightOn?{x:leftOn?content.x+colW+colGap:content.x,y:content.y,w:colW,h:rightH}:null;
+  const lowerBox:Rect|null=lowerOn?{x:content.x,y:content.y+(topOn?topRowH+rowGap:0),w:content.w,h:lowerH}:null;
+  const leftPanel=panelRect(state.topLeftPanel,leftBox),rightPanel=panelRect(state.topRightPanel,rightBox),lowerPanel=panelRect(state.lowerPanel,lowerBox);
+
+  const renderFour=(group:FourSlotGroup,box:Rect|null)=>{
+    if(!box||!group.enabled)return'';
+    const active=group.slots.map((slot,index)=>({slot,index})).filter(x=>x.slot.enabled);
+    if(!active.length)return'';
+    const ref=Math.max(.2,Math.min(box.w/660,box.h/260)),count=active.length,padX=Math.max(8,26*ref),padY=Math.max(7,30*ref),wantedGap=14*ref*group.gap;
+    const targetW=140*ref*group.scale,maxByW=(box.w-padX*2-wantedGap*Math.max(0,count-1))/count,maxByH=(box.h-padY*2)*(140/200);
+    const sw=Math.max(10,Math.min(targetW,maxByW,maxByH)),sh=sw*(200/140),freeGap=count>1?Math.max(0,(box.w-padX*2-sw*count)/(count-1)):0,gap=Math.min(wantedGap,freeGap),total=sw*count+gap*Math.max(0,count-1);
+    const start=box.x+(box.w-total)/2+group.offsetX,sy=box.y+(box.h-sh)/2+group.offsetY;
+    return active.map((entry,pos)=>renderSlot(start+pos*(sw+gap),sy,sw,sh,effectiveSlot(group.style,entry.slot),state)).join('');
   };
-  const utilityW=140,utilityH=200,utilityY=482;
-  const deckX=lowerX+20,graveX=deckX+utilityW+26,extraX=lowerX+lowerW-20-utilityW;
-  const center=(()=>{
-    const group=state.centerGroup;if(!group.enabled)return'';
-    const sw=140*group.scale,sh=200*group.scale,g12=30*group.gap12,g23=30*group.gap23,total=sw*3+g12+g23,start=lowerX+(lowerW-total)/2+group.offsetX,sy=482+(200-sh)/2+group.offsetY;
-    const xs=[start,start+sw+g12,start+sw*2+g12+g23];
-    return group.slots.map((slot,i)=>slot.enabled?renderSlot(xs[i],sy,sw,sh,effectiveSlot(group.style,slot),state):'').join('');
+
+  const utilityAndCenter=(()=>{
+    if(!lowerPanel)return'';
+    const ref=Math.max(.2,Math.min(lowerPanel.w/1376,lowerPanel.h/370)),uw=140*ref,uh=200*ref,margin=Math.max(8,20*ref),utilityGap=Math.max(8,26*ref),uy=lowerPanel.y+(lowerPanel.h-uh)/2;
+    let out='',leftCursor=lowerPanel.x+margin;
+    if(state.deckEnabled){out+=renderSlot(leftCursor,uy,uw,uh,state.utilityStyle,state,state.deckLabel);leftCursor+=uw+utilityGap}
+    if(state.graveEnabled){out+=renderSlot(leftCursor,uy,uw,uh,state.utilityStyle,state,state.graveLabel);leftCursor+=uw+utilityGap}
+    const extraX=lowerPanel.x+lowerPanel.w-margin-uw;
+    const rightLimit=state.extraEnabled?extraX-Math.max(10,20*ref):lowerPanel.x+lowerPanel.w-margin;
+    if(state.extraEnabled)out+=renderSlot(extraX,uy,uw,uh,state.utilityStyle,state,state.extraLabel);
+
+    const group=state.centerGroup;
+    if(!group.enabled)return out;
+    const active=group.slots.map((slot,index)=>({slot,index})).filter(x=>x.slot.enabled);
+    if(!active.length)return out;
+    const centerX=Math.min(rightLimit,leftCursor+Math.max(0,(rightLimit-leftCursor)*.02)),centerW=Math.max(40,rightLimit-centerX),padX=Math.max(4,8*ref),padY=Math.max(6,18*ref);
+    const desiredGaps=active.slice(0,-1).map((entry,i)=>{const next=active[i+1].index;const a=entry.index;const factor=a===0&&next===1?group.gap12:a===1&&next===2?group.gap23:(group.gap12+group.gap23)/2;return 30*ref*factor});
+    const wantedGapTotal=desiredGaps.reduce((a,b)=>a+b,0),count=active.length,targetW=140*ref*group.scale,maxByW=(centerW-padX*2-wantedGapTotal)/count,maxByH=(lowerPanel.h-padY*2)*(140/200);
+    const sw=Math.max(10,Math.min(targetW,maxByW,maxByH)),sh=sw*(200/140),freeForGaps=Math.max(0,centerW-padX*2-sw*count),gapScale=wantedGapTotal>0?Math.min(1,freeForGaps/wantedGapTotal):0,gaps=desiredGaps.map(g=>g*gapScale),total=sw*count+gaps.reduce((a,b)=>a+b,0);
+    let x=centerX+(centerW-total)/2+group.offsetX;const sy=lowerPanel.y+(lowerPanel.h-sh)/2+group.offsetY;
+    active.forEach((entry,pos)=>{out+=renderSlot(x,sy,sw,sh,effectiveSlot(group.style,entry.slot),state);x+=sw+(gaps[pos]||0)});
+    return out;
   })();
-  return`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs><filter id="terrainShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity=".42"/></filter><linearGradient id="terrainSheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".035"/><stop offset=".45" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient></defs><rect width="${W}" height="${H}" fill="${state.backgroundColor}"/><g filter="url(#terrainShadow)">${renderArea(state.outer,x,y,w,h)}${renderArea(state.inner,ix,iy,iw,ih)}${renderArea(state.guide,gx,gy,gw,gh)}${renderPanel(state.topLeftPanel,leftX,topY,topW,topH)}${renderPanel(state.topRightPanel,rightX,topY,topW,topH)}${renderFour(state.topLeftGroup,leftX)}${renderFour(state.topRightGroup,rightX)}${renderPanel(state.lowerPanel,lowerX,lowerY,lowerW,lowerH)}${state.deckEnabled?renderSlot(deckX,utilityY,utilityW,utilityH,state.utilityStyle,state,state.deckLabel):''}${state.graveEnabled?renderSlot(graveX,utilityY,utilityW,utilityH,state.utilityStyle,state,state.graveLabel):''}${center}${state.extraEnabled?renderSlot(extraX,utilityY,utilityW,utilityH,state.utilityStyle,state,state.extraLabel):''}${state.sheenEnabled?`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.max(0,state.outer.radius)}" fill="url(#terrainSheen)" pointer-events="none"/>`:''}</g></svg>`;
+
+  const onionMarkup=onion.map(({style,rect})=>renderArea(style,rect.x,rect.y,rect.w,rect.h)).join('');
+  const panels=`${leftPanel?renderArea(state.topLeftPanel,leftPanel.x,leftPanel.y,leftPanel.w,leftPanel.h):''}${rightPanel?renderArea(state.topRightPanel,rightPanel.x,rightPanel.y,rightPanel.w,rightPanel.h):''}${lowerPanel?renderArea(state.lowerPanel,lowerPanel.x,lowerPanel.y,lowerPanel.w,lowerPanel.h):''}`;
+  const groups=`${leftPanel?renderFour(state.topLeftGroup,leftPanel):''}${rightPanel?renderFour(state.topRightGroup,rightPanel):''}${utilityAndCenter}`;
+  const sheenRect=shell?.rect||base,sheenStyle=shell?.style;
+  const sheenPath=shapePath(sheenStyle?.preset||'rounded',sheenRect.x,sheenRect.y,sheenRect.w,sheenRect.h,sheenStyle?.radius||28);
+  return`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs><filter id="terrainShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity=".42"/></filter><linearGradient id="terrainSheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".035"/><stop offset=".45" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient></defs><rect width="${W}" height="${H}" fill="${state.backgroundColor}"/><g filter="url(#terrainShadow)">${onionMarkup}${panels}${groups}${state.sheenEnabled?`<path d="${sheenPath}" fill="url(#terrainSheen)" pointer-events="none"/>`:''}</g></svg>`;
 }
 
 function download(name:string,blob:Blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
@@ -249,7 +334,7 @@ function ToggleField({label,help,checked,onChange}:{label:string;help?:string;ch
 
 function AreaEditor({title,value,onChange}:{title:string;value:AreaStyle;onChange:(next:AreaStyle)=>void}){
   const set=<K extends keyof AreaStyle>(key:K,v:AreaStyle[K])=>onChange({...value,[key]:v});
-  return <div className="terrainSubEditor"><div className="terrainSubHeader"><b>{title}</b><span>{value.enabled?'attiva':'disattivata'}</span></div><ToggleField label="Mostra area" checked={value.enabled} onChange={v=>set('enabled',v)}/>{value.enabled&&<><div className="terrainToggleGrid"><ToggleField label="Riempimento" checked={value.fillEnabled} onChange={v=>set('fillEnabled',v)}/><ToggleField label="Bordo principale" checked={value.borderEnabled} onChange={v=>set('borderEnabled',v)}/><ToggleField label="Linea interna" checked={value.detailEnabled} onChange={v=>set('detailEnabled',v)}/></div><label>Forma<select value={value.preset} onChange={e=>set('preset',e.target.value as AreaPreset)}>{AREA_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><div className="terrainColorGrid"><ColorField label="Interno" value={value.fillColor} onChange={v=>set('fillColor',v)}/><ColorField label="Bordo" value={value.borderColor} onChange={v=>set('borderColor',v)}/><ColorField label="Linea interna" value={value.accentColor} onChange={v=>set('accentColor',v)}/></div><RangeField label="Inset area" value={value.inset} min={0} max={60} onChange={v=>set('inset',v)}/><RangeField label="Radius" value={value.radius} min={0} max={100} onChange={v=>set('radius',v)}/><RangeField label="Spessore bordo" value={value.borderWidth} min={.25} max={14} step={.1} onChange={v=>set('borderWidth',v)}/><RangeField label="Inset linea interna" value={value.detailInset} min={2} max={60} onChange={v=>set('detailInset',v)}/><OpacityField label="Opacità riempimento" value={value.fillOpacity} onChange={v=>set('fillOpacity',v)}/><OpacityField label="Opacità bordo" value={value.borderOpacity} onChange={v=>set('borderOpacity',v)}/><OpacityField label="Opacità linea interna" value={value.detailOpacity} onChange={v=>set('detailOpacity',v)}/></>}</div>;
+  return <div className="terrainSubEditor"><div className="terrainSubHeader"><b>{title}</b><span>{value.enabled?'attiva':'disattivata'}</span></div><ToggleField label="Mostra area" help="Se la disattivi, la sezione viene rimossa dal layout e le sezioni interne si espandono automaticamente." checked={value.enabled} onChange={v=>set('enabled',v)}/>{value.enabled&&<><div className="terrainToggleGrid"><ToggleField label="Riempimento" checked={value.fillEnabled} onChange={v=>set('fillEnabled',v)}/><ToggleField label="Bordo principale" checked={value.borderEnabled} onChange={v=>set('borderEnabled',v)}/><ToggleField label="Linea interna" checked={value.detailEnabled} onChange={v=>set('detailEnabled',v)}/></div><label>Forma<select value={value.preset} onChange={e=>set('preset',e.target.value as AreaPreset)}>{AREA_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><div className="terrainColorGrid"><ColorField label="Interno" value={value.fillColor} onChange={v=>set('fillColor',v)}/><ColorField label="Bordo" value={value.borderColor} onChange={v=>set('borderColor',v)}/><ColorField label="Linea interna" value={value.accentColor} onChange={v=>set('accentColor',v)}/></div><RangeField label="Inset area" value={value.inset} min={0} max={60} onChange={v=>set('inset',v)}/><RangeField label="Radius" value={value.radius} min={0} max={100} onChange={v=>set('radius',v)}/><RangeField label="Spessore bordo" value={value.borderWidth} min={.25} max={14} step={.1} onChange={v=>set('borderWidth',v)}/><RangeField label="Inset linea interna" value={value.detailInset} min={2} max={60} onChange={v=>set('detailInset',v)}/><OpacityField label="Opacità riempimento" value={value.fillOpacity} onChange={v=>set('fillOpacity',v)}/><OpacityField label="Opacità bordo" value={value.borderOpacity} onChange={v=>set('borderOpacity',v)}/><OpacityField label="Opacità linea interna" value={value.detailOpacity} onChange={v=>set('detailOpacity',v)}/></>}</div>;
 }
 function SlotStyleEditor({title,value,onChange}:{title:string;value:SlotStyle;onChange:(next:SlotStyle)=>void}){
   const set=<K extends keyof SlotStyle>(key:K,v:SlotStyle[K])=>onChange({...value,[key]:v});
@@ -268,6 +353,7 @@ export default function TerrainEditor({onSwitchToCard}:{onSwitchToCard:()=>void}
   const updateArea=(key:'outer'|'inner'|'guide'|'topLeftPanel'|'topRightPanel'|'lowerPanel',value:AreaStyle)=>setState(s=>({...s,[key]:value}));
   const updateFourGroup=(key:'topLeftGroup'|'topRightGroup',value:FourSlotGroup)=>setState(s=>({...s,[key]:value}));
   const updateCenter=(value:CenterSlotGroup)=>setState(s=>({...s,centerGroup:value}));
+  const updateLayout=(patch:Partial<TerrainLayout>)=>update('layout',{...state.layout,...patch});
   const save=()=>localStorage.setItem('kritoma.terrain',JSON.stringify(state));
   const exportSvg=()=>download(`${state.id}.svg`,new Blob([markup],{type:'image/svg+xml'}));
   const raster=(cb:(canvas:HTMLCanvasElement)=>void)=>{const u=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'})),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=4800;c.height=2760;c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);cb(c);URL.revokeObjectURL(u)};im.src=u};
@@ -279,9 +365,11 @@ export default function TerrainEditor({onSwitchToCard}:{onSwitchToCard:()=>void}
 
     <details className="settingsGroup" open><summary><span><b>Terreno</b><small>Identità, formato e superficie di fondo</small></span><i>›</i></summary><div className="settingsBody"><label>Nome<input value={state.name} onChange={e=>update('name',e.target.value)}/></label><label>ID file<input value={state.id} onChange={e=>update('id',e.target.value)}/></label><div className="fieldGrid"><label>Larghezza stampa (mm)<input type="number" min="200" max="1200" value={state.printWidthMm} onChange={e=>update('printWidthMm',Number(e.target.value))}/></label><label>Altezza stampa (mm)<input type="number" min="150" max="800" value={state.printHeightMm} onChange={e=>update('printHeightMm',Number(e.target.value))}/></label></div><ColorField label="Colore superficie di fondo" value={state.backgroundColor} onChange={v=>update('backgroundColor',v)}/><ToggleField label="Sheen superficiale" help="Leggera luce diagonale sul playmat." checked={state.sheenEnabled} onChange={v=>update('sheenEnabled',v)}/><button className="secondary wideButton" onClick={reset}>Ripristina terreno base</button></div></details>
 
+    <details className="settingsGroup"><summary><span><b>Layout responsive</b><small>Altezze, spazi tra sezioni e reflow automatico</small></span><i>›</i></summary><div className="settingsBody"><small>Le altezze sono valori desiderati: il renderer le ridimensiona proporzionalmente per riempire sempre tutta l’area disponibile. Se una macro sezione viene disattivata, le sezioni rimaste occupano automaticamente lo spazio liberato.</small><div className="terrainLayoutGrid"><RangeField label="Margine esterno X" value={state.layout.edgeInsetX} min={0} max={140} onChange={edgeInsetX=>updateLayout({edgeInsetX})}/><RangeField label="Margine esterno Y" value={state.layout.edgeInsetY} min={0} max={120} onChange={edgeInsetY=>updateLayout({edgeInsetY})}/><RangeField label="Padding contenuto laterale" value={state.layout.contentPaddingX} min={0} max={180} onChange={contentPaddingX=>updateLayout({contentPaddingX})}/><RangeField label="Padding contenuto alto" value={state.layout.contentPaddingTop} min={0} max={180} onChange={contentPaddingTop=>updateLayout({contentPaddingTop})}/><RangeField label="Padding contenuto basso" value={state.layout.contentPaddingBottom} min={0} max={220} onChange={contentPaddingBottom=>updateLayout({contentPaddingBottom})}/><RangeField label="Spazio tra pannelli superiori" value={state.layout.topGapX} min={0} max={220} onChange={topGapX=>updateLayout({topGapX})}/><RangeField label="Spazio superiore ↔ inferiore" value={state.layout.rowGap} min={0} max={220} onChange={rowGap=>updateLayout({rowGap})}/><RangeField label="Altezza sup. sinistro" value={state.layout.topLeftHeight} min={80} max={700} onChange={topLeftHeight=>updateLayout({topLeftHeight})}/><RangeField label="Altezza sup. destro" value={state.layout.topRightHeight} min={80} max={700} onChange={topRightHeight=>updateLayout({topRightHeight})}/><RangeField label="Altezza pannello inferiore" value={state.layout.lowerHeight} min={100} max={760} onChange={lowerHeight=>updateLayout({lowerHeight})}/></div></div></details>
+
     <details className="settingsGroup"><summary><span><b>Strati perimetro</b><small>Gestione a cipolla: esterno, interno e linea guida</small></span><i>›</i></summary><div className="settingsBody"><small>Ogni livello può essere nascosto interamente oppure mantenuto senza riempimento, bordo o linea interna. Forma e stile sono indipendenti per ciascuno strato.</small><AreaEditor title="1 · Perimetro esterno" value={state.outer} onChange={v=>updateArea('outer',v)}/><AreaEditor title="2 · Campo interno" value={state.inner} onChange={v=>updateArea('inner',v)}/><AreaEditor title="3 · Livello interno / guida" value={state.guide} onChange={v=>updateArea('guide',v)}/></div></details>
 
-    <details className="settingsGroup"><summary><span><b>Macro aree</b><small>Pannelli superiori e pannello inferiore indipendenti</small></span><i>›</i></summary><div className="settingsBody"><small>Le tre macro aree hanno forma, riempimento, bordo e linea interna separati. Nascondere un pannello non nasconde automaticamente i suoi slot.</small><AreaEditor title="Pannello superiore sinistro" value={state.topLeftPanel} onChange={v=>updateArea('topLeftPanel',v)}/><AreaEditor title="Pannello superiore destro" value={state.topRightPanel} onChange={v=>updateArea('topRightPanel',v)}/><AreaEditor title="Pannello inferiore" value={state.lowerPanel} onChange={v=>updateArea('lowerPanel',v)}/></div></details>
+    <details className="settingsGroup"><summary><span><b>Macro aree</b><small>Pannelli superiori e pannello inferiore indipendenti</small></span><i>›</i></summary><div className="settingsBody"><small>Le tre macro aree hanno forma, riempimento, bordo e linea interna separati. Disattivare una macro area la rimuove dal flow insieme ai contenuti ospitati; gli altri pannelli vengono riallargati e rialzati automaticamente. Per nascondere solo la grafica del pannello mantenendo la sezione, disattiva riempimento/bordi invece di “Mostra area”.</small><AreaEditor title="Pannello superiore sinistro" value={state.topLeftPanel} onChange={v=>updateArea('topLeftPanel',v)}/><AreaEditor title="Pannello superiore destro" value={state.topRightPanel} onChange={v=>updateArea('topRightPanel',v)}/><AreaEditor title="Pannello inferiore" value={state.lowerPanel} onChange={v=>updateArea('lowerPanel',v)}/></div></details>
 
     <details className="settingsGroup"><summary><span><b>4 slot · gruppo sinistro</b><small>Stile di gruppo e override per ogni singolo slot</small></span><i>›</i></summary><div className="settingsBody">{renderFourGroupEditor('Gruppo superiore sinistro','topLeftGroup')}</div></details>
 
