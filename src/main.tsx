@@ -2,6 +2,10 @@ import React,{useEffect,useMemo,useRef,useState}from'react';
 import{createRoot}from'react-dom/client';
 import jsPDF from'jspdf';
 import'./styles.css';
+import {LiveEditor} from './LiveEditor';
+import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras} from './liveModel';
+import type {LiveEdits,ExtraElement} from './liveModel';
+import {useHistory} from './useHistory';
 import TerrainEditor,{EditorSwitcher}from'./TerrainEditor';
 
 type CardType='fighter'|'location'|'action'|'extraFighter'|'objective'|'token';
@@ -19,6 +23,7 @@ type TextStyle={size:number;family:string};
 type TypographyStyle=Record<TextRole,TextStyle>;
 type RarityKey='common'|'rare'|'super'|'ultra'|'secret'|'ultimate'|'ghost'|'gold'|'starlight';
 type Card={
+  liveEdits?:LiveEdits;extras?:ExtraElement[];
   id:string;type:CardType;name:string;scope:string;scopeColor:string;cost?:string;rarity?:RarityKey;
   meta:Detail[];effects:Detail[];stats:Stat[];art?:string;
   artScale?:number;artX?:number;artY?:number;layers?:Partial<LayerOpacity>;frame?:Partial<FrameStyle>;
@@ -175,7 +180,7 @@ function renderRaritySurface(rarity:RarityKey){switch(rarity){case'rare':return`
 function normalizeDetail(x:Detail):Detail{return{...x,opacity:clamp01(x.opacity,1)}}
 function normalizeStat(x:Stat):Stat{return{...x,opacity:clamp01(x.opacity,1)}}
 function normalizeCard(c:Card):Card{const legacy:any=c||{};return{
-  ...DEFAULT,...legacy,rarity:isRarity(legacy.rarity)?legacy.rarity:'common',
+  ...DEFAULT,...legacy,liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),rarity:isRarity(legacy.rarity)?legacy.rarity:'common',
   meta:(legacy.meta??DEFAULT.meta).map(normalizeDetail),effects:(legacy.effects??DEFAULT.effects).map(normalizeDetail),stats:(legacy.stats??DEFAULT.stats).map(normalizeStat),
   artScale:Number.isFinite(legacy.artScale)?legacy.artScale:1,artX:Number.isFinite(legacy.artX)?legacy.artX:0,artY:Number.isFinite(legacy.artY)?legacy.artY:0,
   layers:{...DEFAULT_LAYERS,...(legacy.layers||{})},frame:{...DEFAULT_FRAME,...(legacy.frame||{})},typography:normalizeTypography(legacy.typography)
@@ -287,30 +292,30 @@ function frameSvg(theme:string,style:FrameStyle,layerOpacity:number){return`${fr
 function renderSlots(meta:Detail[],layerOpacity:number,theme:string,y:number,x0:number,totalWidth:number,style:TextStyle){
   if(!meta.length||layerOpacity<=0)return'';
   const g=12,sw=(totalWidth-g*(meta.length-1))/meta.length,family=esc(fontStack(style.family));
-  return meta.map((m,i)=>{const x=x0+i*(sw+g),o=layerOpacity*clamp01(m.opacity,1),text=String(m.value||m.label||''),fontSize=fitFontSize(text,clamp(style.size,9,24),9,Math.max(24,sw-76));return`<g opacity="${o}"><rect x="${x}" y="${y}" width="${sw}" height="48" rx="24" fill="#07141e" fill-opacity=".80" stroke="#eee6da" stroke-width="1.35"/><path d="M ${x+26} ${y+5} H ${x+sw-26}" stroke="${theme}" stroke-width="1.7" stroke-linecap="round" opacity=".82"/>${slotIcon(i,x+28,y+24)}<text x="${x+52}" y="${y+24}" dominant-baseline="middle" fill="#f4efe5" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(text)}</text></g>`}).join('');
+  return meta.map((m,i)=>{const x=x0+i*(sw+g),o=layerOpacity*clamp01(m.opacity,1),text=String(m.value||m.label||''),fontSize=fitFontSize(text,clamp(style.size,9,24),9,Math.max(24,sw-76));return editable(`meta-${i}`,`Informazione ${i+1}`,`<g opacity="${o}"><rect x="${x}" y="${y}" width="${sw}" height="48" rx="24" fill="#07141e" fill-opacity=".80" stroke="#eee6da" stroke-width="1.35"/><path d="M ${x+26} ${y+5} H ${x+sw-26}" stroke="${theme}" stroke-width="1.7" stroke-linecap="round" opacity=".82"/>${editable(`meta-icon-${i}`,`Simbolo informazione ${i+1}`,slotIcon(i,x+28,y+24))}<text x="${x+52}" y="${y+24}" dominant-baseline="middle" fill="#f4efe5" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(text)}</text></g>`) }).join('');
 }
 function renderEffects(effects:Detail[],y:number,x:number,w:number,h:number,style:TextStyle){
   if(!effects.length)return'';
   const family=esc(fontStack(style.family)),maxWidth=w-34,availableHeight=h-34;
-  let size=clamp(style.size,9,26),laid:{text:string;opacity:number;first:boolean}[]=[];
+  let size=clamp(style.size,9,26),laid:{text:string;opacity:number;first:boolean;index:number}[]=[];
   for(let pass=0;pass<4;pass++){
     laid=[];
     effects.forEach((e,idx)=>{
       const text=`${e.label?`${e.label}: `:''}${e.value}`.trim(),lines=wrapByWidth(text,maxWidth,size,9),opacity=clamp01(e.opacity,1);
-      lines.forEach((line,j)=>laid.push({text:line,opacity,first:j===0}));
-      if(idx<effects.length-1)laid.push({text:'',opacity:0,first:false});
+      lines.forEach((line,j)=>laid.push({text:line,opacity,first:j===0,index:idx}));
+      if(idx<effects.length-1)laid.push({text:'',opacity:0,first:false,index:idx});
     });
     const rowHeight=size*1.34,totalHeight=Math.max(1,laid.length)*rowHeight;
     if(totalHeight<=availableHeight||size<=9.1)break;
     size=clamp(size*(availableHeight/totalHeight)*.96,9,size-.5);
   }
   const lineHeight=size*1.34,start=y+20;
-  return laid.map((line,row)=>line.text?`<text x="${x+18}" y="${start+row*lineHeight}" dominant-baseline="hanging" fill="#1e3343" font-size="${size.toFixed(2)}" font-family="${family}" font-weight="${line.first?700:500}" opacity="${line.opacity}">${esc(line.text)}</text>`:'').join('');
+  return effects.map((_,idx)=>editable(`effect-${idx}`,`Testo effetto ${idx+1}`,laid.map((line,row)=>line.index===idx&&line.text?`<text x="${x+18}" y="${start+row*lineHeight}" dominant-baseline="hanging" fill="#1e3343" font-size="${size.toFixed(2)}" font-family="${family}" font-weight="${line.first?700:500}" opacity="${line.opacity}">${esc(line.text)}</text>`:'').join(''))).join('');
 }
 function renderStats(stats:Stat[],id:string,statsOpacity:number,idOpacity:number,theme:string,x0:number,total:number,style:TextStyle){
   const y=786,h=50,g=10,idW=132,idX=x0+total-idW,usable=idX-x0-(stats.length?g:0),sw=stats.length?(usable-g*(stats.length-1))/stats.length:0,family=esc(fontStack(style.family));
-  const statNodes=stats.map((s,i)=>{const x=x0+i*(sw+g),fill=({ATK:'#9c1d2e',RES:'#02618f',PRF:'#b47a13',PV:'#5f4a84'}as any)[s.kind.toUpperCase()]||'#2d4456',o=statsOpacity*clamp01(s.opacity,1),divider=x+42,valueX=divider+(x+sw-divider)/2,value=String(s.value||''),fontSize=fitFontSize(value,clamp(style.size,10,28),10,Math.max(20,sw-50));return`<g opacity="${o}"><path d="${bevel(x,y,sw,h)}" fill="${fill}" fill-opacity=".94" stroke="#eee5d8" stroke-width="1.8"/><path d="${bevel(x+3,y+3,sw-6,h-6,10)}" fill="none" stroke="#142836" stroke-width="1.2"/><line x1="${divider}" y1="${y+7}" x2="${divider}" y2="${y+h-7}" stroke="#142836" stroke-width="1.1"/>${statIcon(s.kind,x+21,y+25)}<text x="${valueX}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#f5f0e8" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(value)}</text></g>`}).join('');
-  const idSize=fitFontSize(id,13,9,idW-58),idNode=`<g opacity="${idOpacity}"><path d="${bevel(idX,y,idW,h)}" fill="#0b1822" fill-opacity=".90" stroke="#eee5d8" stroke-width="1.8"/><path d="M ${idX+13} ${y+25} L ${idX+23} ${y+15} H ${idX+35} L ${idX+45} ${y+25} L ${idX+35} ${y+35} H ${idX+23} Z" fill="#9a9da6" opacity=".70"/><text x="${idX+29}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#eee7dc" font-size="12" font-family="${family}" font-weight="700">ID</text><text x="${idX+53}" y="${y+25}" dominant-baseline="middle" fill="#eee7dc" font-size="${idSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(id)}</text></g>`;
+  const statNodes=stats.map((s,i)=>{const x=x0+i*(sw+g),fill=({ATK:'#9c1d2e',RES:'#02618f',PRF:'#b47a13',PV:'#5f4a84'}as any)[s.kind.toUpperCase()]||'#2d4456',o=statsOpacity*clamp01(s.opacity,1),divider=x+42,valueX=divider+(x+sw-divider)/2,value=String(s.value||''),fontSize=fitFontSize(value,clamp(style.size,10,28),10,Math.max(20,sw-50));return editable(`stat-${i}`,`Valore ${i+1}`,`<g opacity="${o}"><path d="${bevel(x,y,sw,h)}" fill="${fill}" fill-opacity=".94" stroke="#eee5d8" stroke-width="1.8"/><path d="${bevel(x+3,y+3,sw-6,h-6,10)}" fill="none" stroke="#142836" stroke-width="1.2"/><line x1="${divider}" y1="${y+7}" x2="${divider}" y2="${y+h-7}" stroke="#142836" stroke-width="1.1"/>${editable(`stat-icon-${i}`,`Simbolo valore ${i+1}`,statIcon(s.kind,x+21,y+25))}<text x="${valueX}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#f5f0e8" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(value)}</text></g>`) }).join('');
+  const idSize=fitFontSize(id,13,9,idW-58),idNode=editable('id','Codice carta',`<g opacity="${idOpacity}"><path d="${bevel(idX,y,idW,h)}" fill="#0b1822" fill-opacity=".90" stroke="#eee5d8" stroke-width="1.8"/><path d="M ${idX+13} ${y+25} L ${idX+23} ${y+15} H ${idX+35} L ${idX+45} ${y+25} L ${idX+35} ${y+35} H ${idX+23} Z" fill="#9a9da6" opacity=".70"/><text x="${idX+29}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#eee7dc" font-size="12" font-family="${family}" font-weight="700">ID</text><text x="${idX+53}" y="${y+25}" dominant-baseline="middle" fill="#eee7dc" font-size="${idSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(id)}</text></g>`);
   return{statNodes,idNode};
 }
 
@@ -318,7 +323,7 @@ function svg(card:Card){
   const theme=card.scopeColor||'#1d5c6b',layers={...DEFAULT_LAYERS,...card.layers},frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common';
   const scale=clamp(card.artScale??1,.4,3.5),ox=card.artX??0,oy=card.artY??0,baseX=20,baseY=20,baseW=590,baseH=840,iw=baseW*scale,ih=baseH*scale,ix=baseX-(iw-baseW)/2+ox,iy=baseY-(ih-baseH)/2+oy;
   const artFilter=rarity!=='common'?` filter="url(#art-${rarity})"`:'';
-  const art=card.art?`<image href="${card.art}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cardClip)" opacity="${clamp01(layers.artwork,1)}"${artFilter}/>`:`<rect x="20" y="20" width="590" height="840" rx="28" fill="#18232b" opacity=".9"/>`;
+  const art=card.art?`<image href="${esc(card.art)}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cardClip)" opacity="${clamp01(layers.artwork,1)}"${artFilter}/>`:`<rect x="20" y="20" width="590" height="840" rx="28" fill="#18232b" opacity=".9"/>`;
   const costVisible=card.type!=='token'&&card.type!=='objective',frameO=clamp01(layers.frame,1),headerO=clamp01(layers.header,1),costO=clamp01(layers.cost,1),metaO=clamp01(layers.meta,1),effectO=clamp01(layers.effect,1),statsO=clamp01(layers.stats,1),idO=clamp01(layers.id,1);
   const contentX=clamp(52+frame.inset*.55+frame.size*.45,58,74),contentW=630-contentX*2,headerH=72,headerY=clamp(43+frame.inset*.30+frame.size*.25,47,58),headerCy=headerY+headerH/2,costR=38,costCx=contentX+25;
   const headerX=costVisible?costCx+49:contentX,headerRight=630-contentX,headerW=headerRight-headerX,diamondX=headerRight-28,titleX=headerX+28,titleMax=Math.max(80,diamondX-titleX-29);
@@ -326,22 +331,22 @@ function svg(card:Card){
   const titleFamily=esc(fontStack(typography.title.family)),costFamily=esc(fontStack(typography.cost.family));
   const hasMeta=card.meta.length>0,hasEffects=card.effects.length>0,metaY=hasEffects?566:714,effectY=hasMeta?624:566,effectH=hasMeta?145:204;
   const{statNodes,idNode}=renderStats(card.stats,card.id,statsO,idO,theme,contentX,contentW,typography.stats);
-  return`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 630 880" width="630" height="880"><defs>
+  return applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 630 880" width="630" height="880"><defs>
     <clipPath id="cardClip"><rect x="20" y="20" width="590" height="840" rx="28"/></clipPath>
     <linearGradient id="paperGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f4ede2"/><stop offset="100%" stop-color="#e6ddcf"/></linearGradient>
     <filter id="paperNoise" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="5" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m" result="f"><feFuncA type="table" tableValues="0 .08"/></feComponentTransfer><feBlend in="SourceGraphic" in2="f" mode="multiply"/></filter>
     ${rarityDefs()}
   </defs>
-  <rect width="630" height="880" fill="#fff"/>${art}
-  ${renderRarityArtOverlay(rarity)}
-  ${frameSvg(theme,frame,frameO)}
-  <g opacity="${headerO}"><rect x="${headerX}" y="${headerY}" width="${headerW}" height="${headerH}" rx="24" fill="url(#paperGrad)" fill-opacity=".92" filter="url(#paperNoise)" stroke="#efe6d8" stroke-width="1.4"/><rect x="${headerX+5}" y="${headerY+5}" width="${headerW-10}" height="${headerH-10}" rx="20" fill="none" stroke="${theme}" stroke-width="1.8" opacity=".9"/><text x="${titleX}" y="${headerCy}" dominant-baseline="middle" fill="#213749" font-size="${titleSize.toFixed(2)}" font-family="${titleFamily}" font-weight="700">${esc(card.name)}</text>${diamond(theme,diamondX,headerCy)}</g>
-  ${costVisible?`<g opacity="${costO}"><circle cx="${costCx}" cy="${headerCy}" r="${costR}" fill="#0b1720" stroke="${theme}" stroke-width="2.4"/><circle cx="${costCx}" cy="${headerCy}" r="31.5" fill="url(#paperGrad)" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.5"/><circle cx="${costCx}" cy="${headerCy}" r="28" fill="none" stroke="#173040" stroke-width="1.5"/><text x="${costCx}" y="${headerCy}" dominant-baseline="middle" text-anchor="middle" fill="#173040" font-size="${costSize.toFixed(2)}" font-family="${costFamily}" font-weight="700">${esc(card.cost||'')}</text></g>`:''}
+  <rect width="630" height="880" fill="#fff"/>${editable('artwork','Illustrazione',art)}
+  ${editable('rarity-art','Finitura illustrazione',renderRarityArtOverlay(rarity))}
+  ${editable('frame','Cornice',frameBaseSvg(theme,frame,frameO))}${editable('accents','Decorazioni',frameAccentSvg(theme,frame,frameO))}
+  <g data-live-id="header" data-live-label="Titolo e riquadro" opacity="${headerO}"><rect x="${headerX}" y="${headerY}" width="${headerW}" height="${headerH}" rx="24" fill="url(#paperGrad)" fill-opacity=".92" filter="url(#paperNoise)" stroke="#efe6d8" stroke-width="1.4"/><rect x="${headerX+5}" y="${headerY+5}" width="${headerW-10}" height="${headerH-10}" rx="20" fill="none" stroke="${theme}" stroke-width="1.8" opacity=".9"/><g data-live-id="title" data-live-label="Testo del titolo"><text x="${titleX}" y="${headerCy}" dominant-baseline="middle" fill="#213749" font-size="${titleSize.toFixed(2)}" font-family="${titleFamily}" font-weight="700">${esc(card.name)}</text></g>${editable('diamond','Simbolo del titolo',diamond(theme,diamondX,headerCy))}</g>
+  ${costVisible?`<g data-live-id="cost" data-live-label="Costo" opacity="${costO}"><circle cx="${costCx}" cy="${headerCy}" r="${costR}" fill="#0b1720" stroke="${theme}" stroke-width="2.4"/><circle cx="${costCx}" cy="${headerCy}" r="31.5" fill="url(#paperGrad)" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.5"/><circle cx="${costCx}" cy="${headerCy}" r="28" fill="none" stroke="#173040" stroke-width="1.5"/><g data-live-id="cost-value" data-live-label="Testo del costo"><text x="${costCx}" y="${headerCy}" dominant-baseline="middle" text-anchor="middle" fill="#173040" font-size="${costSize.toFixed(2)}" font-family="${costFamily}" font-weight="700">${esc(card.cost||'')}</text></g></g>`:''}
   ${renderSlots(card.meta,metaO,theme,metaY,contentX,contentW,typography.meta)}
-  ${hasEffects?`<g opacity="${effectO}"><rect x="${contentX}" y="${effectY}" width="${contentW}" height="${effectH}" rx="18" fill="url(#paperGrad)" fill-opacity=".78" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.2"/><rect x="${contentX+5}" y="${effectY+5}" width="${contentW-10}" height="${effectH-10}" rx="14" fill="none" stroke="#173040" stroke-width="1.4" opacity=".92"/>${renderEffects(card.effects,effectY,contentX,contentW,effectH,typography.effect)}</g>`:''}
+  ${hasEffects?`<g data-live-id="effects" data-live-label="Riquadro effetti" opacity="${effectO}"><rect x="${contentX}" y="${effectY}" width="${contentW}" height="${effectH}" rx="18" fill="url(#paperGrad)" fill-opacity=".78" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.2"/><rect x="${contentX+5}" y="${effectY+5}" width="${contentW-10}" height="${effectH-10}" rx="14" fill="none" stroke="#173040" stroke-width="1.4" opacity=".92"/>${renderEffects(card.effects,effectY,contentX,contentW,effectH,typography.effect)}</g>`:''}
   ${statNodes}${idNode}
-  ${renderRaritySurface(rarity)}
-  </svg>`;
+  ${editable('rarity-surface','Riflessi e finitura',renderRaritySurface(rarity))}${renderExtras(card.extras)}
+  </svg>`,card.liveEdits);
 }
 
 function RangeField({label,value,min,max,step=1,onChange,suffix=''}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void;suffix?:string}){return <label className="rangeField"><span><span>{label}</span><b>{Number.isInteger(step)?Math.round(value):value.toFixed(step<.1?2:1)}{suffix}</b></span><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))}/></label>}
@@ -349,7 +354,9 @@ function OpacityField({label,value,onChange}:{label:string;value:number|undefine
 function TypographyControls({label,value,onChange,min,max}:{label:string;value:TextStyle;onChange:(patch:Partial<TextStyle>)=>void;min:number;max:number}){return <><label>{label} — font<select value={value.family} onChange={e=>onChange({family:e.target.value})}>{FONT_OPTIONS.map(font=><option key={font} value={font}>{font}</option>)}</select></label><RangeField label={`${label} — dimensione`} value={value.size} min={min} max={max} step={1} onChange={size=>onChange({size})} suffix=" pt"/></>}
 
 function App(){
-  const store=useLocalStore(),[card,setCard]=useState<Card>(()=>normalizeCard(store.cards[0]||DEFAULT)),[settingsOpen,setSettingsOpen]=useState(false);
+  const store=useLocalStore(),history=useHistory<Card>(()=>{try{return normalizeCard(JSON.parse(localStorage.getItem('kritoma.cardDraft')||'null')||store.cards[0]||DEFAULT)}catch{return normalizeCard(store.cards[0]||DEFAULT)}}),card=history.value,setCard=history.set,[settingsOpen,setSettingsOpen]=useState(false);
+  const [liveMode,setLiveMode]=useState(true);
+  useEffect(()=>{localStorage.setItem('kritoma.cardDraft',JSON.stringify(card))},[card]);
   const[editorMode,setEditorMode]=useState<'card'|'terrain'>('card');
   const [foilPreview,setFoilPreview]=useState(()=>localStorage.getItem('kritoma.foilPreview')!=='false');
   const [reduceMotion,setReduceMotion]=useState(()=>{const saved=localStorage.getItem('kritoma.reduceMotion');return saved!==null?saved==='true':window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false});
@@ -390,9 +397,23 @@ function App(){
   if(editorMode==='terrain')return <TerrainEditor onSwitchToCard={()=>setEditorMode('card')}/>;
 
   return <div className="appShell">
-    <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Modifica</b></button></header>
-    <main className="workspace"><div className="previewWrap"><div ref={previewRef} className={`interactiveCard rarity-${rarity}${tilt.active?' isActive':''}${foilPreview?'':' isDisabled'}`} style={previewStyle} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={resetTilt} onPointerLeave={handlePointerLeave} aria-label="Anteprima carta interattiva: muovi il mouse o trascina con il dito per simulare i riflessi"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/>{foilPreview&&<div className="foilPreviewLayers" aria-hidden="true"><div className="foilHolo"/><div className="foilSparkle"/><div className="foilGlare"/></div>}</div></div></main>
-    <nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>setSettingsOpen(true)}>Impostazioni</button><button onClick={exportPng}>PNG</button><button onClick={exportPdf}>PDF</button></nav>
+    <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
+    {liveMode?<LiveEditor markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} onAdd={kind=>{const id=`custom-${crypto.randomUUID()}`;update({extras:[...(card.extras||[]),{id,kind,text:'Nuovo testo',x:150,y:350,w:180,h:80}]});return id;}} onDelete={id=>{const liveEdits={...card.liveEdits};delete liveEdits[id];update({extras:card.extras?.filter(v=>v.id!==id),liveEdits});}} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
+      const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea value={value} onChange={e=>change(e.target.value)}/></label>;
+      if(id.startsWith('custom-')){const item=card.extras?.find(v=>v.id===id);return item?.kind==='text'?field('Testo libero',item.text,text=>update({extras:card.extras?.map(v=>v.id===id?{...v,text}:v)})):null;}
+      if(id==='header'||id==='title')return field('Nome della carta',card.name,name=>update({name}));
+      if(id==='cost'||id==='cost-value')return field('Costo',card.cost||'',cost=>update({cost}));
+      if(id==='id')return field('Codice della carta',card.id,id=>update({id}));
+      if(/^meta-\d+$/.test(id)){const i=Number(id.split('-')[1]);return field('Informazione',card.meta[i]?.value||'',value=>update({meta:card.meta.map((m,j)=>j===i?{...m,value}:m)}));}
+      if(id.startsWith('effect-')){const i=Number(id.split('-')[1]),item=card.effects[i];return item&&<>{field('Etichetta',item.label,label=>update({effects:card.effects.map((m,j)=>j===i?{...m,label}:m)}))}{field('Testo effetto',item.value,value=>update({effects:card.effects.map((m,j)=>j===i?{...m,value}:m)}))}</>;}
+      if(/^stat-\d+$/.test(id)){const i=Number(id.split('-')[1]),item=card.stats[i];return item&&<>{field('Tipo di valore (ATK, RES, PRF, PV)',item.kind,kind=>update({stats:card.stats.map((m,j)=>j===i?{...m,kind}:m)}))}{field('Valore',item.value,value=>update({stats:card.stats.map((m,j)=>j===i?{...m,value}:m)}))}</>;}
+      if(id==='artwork')return <label>Carica illustrazione<input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>update({art:String(r.result)});r.readAsDataURL(f);}}}/></label>;
+      if(id==='frame')return <label>Forma della cornice<select value={frame.framePreset} onChange={e=>updateFrame('framePreset',e.target.value as FramePreset)}>{FRAME_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>;
+      if(id==='accents')return <label>Decorazione<select value={frame.accentPreset} onChange={e=>updateFrame('accentPreset',e.target.value as AccentPreset)}>{ACCENT_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>;
+      if(id.startsWith('rarity-'))return <label>Finitura della carta<select value={rarity} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>;
+      return <small>Modifica l’aspetto con i controlli sotto. Aggiungi o rimuovi testi nelle impostazioni avanzate.</small>;
+    }}</LiveEditor>:<main className="workspace"><div className="previewWrap"><div ref={previewRef} className={`interactiveCard rarity-${rarity}${tilt.active?' isActive':''}${foilPreview?'':' isDisabled'}`} style={previewStyle} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={resetTilt} onPointerLeave={handlePointerLeave} aria-label="Anteprima carta interattiva: muovi il mouse o trascina con il dito per simulare i riflessi"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/>{foilPreview&&<div className="foilPreviewLayers" aria-hidden="true"><div className="foilHolo"/><div className="foilSparkle"/><div className="foilGlare"/></div>}</div></div></main>}
+    <nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button><button onClick={exportPng}>PNG</button><button onClick={exportPdf}>PDF</button></nav>
 
     {settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni carta">
       <div className="sheetHandle"/>
@@ -424,7 +445,7 @@ function App(){
           <button className="wideButton" onClick={randomizeFrame}>🎲 Randomize cornice</button>
           <small>Ogni randomizzazione genera una geometria procedurale nuova, non inclusa nei preset.</small>
           <RangeField label="Spessore bordo" value={frame.size} min={1} max={10} step={.1} onChange={v=>updateFrame('size',v)}/>
-          <RangeField label="Radius" value={frame.radius} min={8} max={46} onChange={v=>updateFrame('radius',v)}/>
+          <RangeField label="Angoli arrotondati" value={frame.radius} min={8} max={46} onChange={v=>updateFrame('radius',v)}/>
           <RangeField label="Inset" value={frame.inset} min={4} max={28} onChange={v=>updateFrame('inset',v)}/>
           <OpacityField label="Opacità bordo" value={frame.opacity} onChange={v=>updateFrame('opacity',v)}/>
           <OpacityField label="Dettaglio / seconda linea" value={frame.frameDetail} onChange={v=>updateFrame('frameDetail',v)}/>
