@@ -19,7 +19,6 @@ export function LiveEditor({markup,width,height,edits:raw,onChange,history,child
   };
   useLayoutEffect(measure,[markup,selected,zoom]);
   useEffect(()=>{const resize=new ResizeObserver(()=>{const el=stage.current;if(el)setFitWidth(Math.max(100,Math.min(el.clientWidth-52,(el.clientHeight-90)*width/height)));measure();});if(stage.current)resize.observe(stage.current);return()=>resize.disconnect();},[selected,width,height,panel]);
-  const point=(ev:React.PointerEvent)=>{const svg=canvas.current?.querySelector('svg');const m=svg?.getScreenCTM();return m?new DOMPoint(ev.clientX,ev.clientY).matrixTransform(m.inverse()):new DOMPoint();};
   const start=(ev:React.PointerEvent,mode='move')=>{
     if(ev.button!==0)return;
     const target=(ev.target as Element).closest('[data-live-id]') as SVGGElement|null,id=mode==='move'?target?.dataset.liveId:selected;

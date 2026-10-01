@@ -355,8 +355,8 @@ function TypographyControls({label,value,onChange,min,max}:{label:string;value:T
 
 function App(){
   const store=useLocalStore(),history=useHistory<Card>(()=>{try{return normalizeCard(JSON.parse(localStorage.getItem('kritoma.cardDraft')||'null')||store.cards[0]||DEFAULT)}catch{return normalizeCard(store.cards[0]||DEFAULT)}}),card=history.value,setCard=history.set,[settingsOpen,setSettingsOpen]=useState(false);
-  const [liveMode,setLiveMode]=useState(true);
-  useEffect(()=>{localStorage.setItem('kritoma.cardDraft',JSON.stringify(card))},[card]);
+  const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState('');
+  useEffect(()=>{try{localStorage.setItem('kritoma.cardDraft',JSON.stringify(card));setSaveError('')}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.')}},[card]);
   const[editorMode,setEditorMode]=useState<'card'|'terrain'>('card');
   const [foilPreview,setFoilPreview]=useState(()=>localStorage.getItem('kritoma.foilPreview')!=='false');
   const [reduceMotion,setReduceMotion]=useState(()=>{const saved=localStorage.getItem('kritoma.reduceMotion');return saved!==null?saved==='true':window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false});
@@ -369,7 +369,7 @@ function App(){
   const updateTypography=(role:TextRole,patch:Partial<TextStyle>)=>update({typography:{...card.typography,[role]:{...normalizeTypography(card.typography)[role],...patch}}});
   const randomizeFrame=()=>update({frame:{...card.frame,framePreset:'random',frameSeed:nextSeed(frame.frameSeed)}});
   const randomizeAccents=()=>update({frame:{...card.frame,accentPreset:'random',accentSeed:nextSeed(frame.accentSeed)}});
-  const save=()=>store.save([...store.cards.filter(c=>c.id!==card.id),card]);
+  const save=()=>{try{store.save([...store.cards.filter(c=>c.id!==card.id),card]);setSaveError('')}catch{setSaveError('Salvataggio non riuscito: esporta il progetto prima di chiudere.')}};
   const resetArt=()=>update({artScale:1,artX:0,artY:0});
   const download=(name:string,blob:Blob)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)};
   const exportSvg=()=>download(`${card.id}.svg`,new Blob([markup],{type:'image/svg+xml'}));
@@ -398,8 +398,9 @@ function App(){
 
   return <div className="appShell">
     <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
+    {saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}
     {liveMode?<LiveEditor markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} onAdd={kind=>{const id=`custom-${crypto.randomUUID()}`;update({extras:[...(card.extras||[]),{id,kind,text:'Nuovo testo',x:150,y:350,w:180,h:80}]});return id;}} onDelete={id=>{const liveEdits={...card.liveEdits};delete liveEdits[id];update({extras:card.extras?.filter(v=>v.id!==id),liveEdits});}} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
-      const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea value={value} onChange={e=>change(e.target.value)}/></label>;
+      const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea aria-label={label} value={value} onChange={e=>change(e.target.value)}/></label>;
       if(id.startsWith('custom-')){const item=card.extras?.find(v=>v.id===id);return item?.kind==='text'?field('Testo libero',item.text,text=>update({extras:card.extras?.map(v=>v.id===id?{...v,text}:v)})):null;}
       if(id==='header'||id==='title')return field('Nome della carta',card.name,name=>update({name}));
       if(id==='cost'||id==='cost-value')return field('Costo',card.cost||'',cost=>update({cost}));

@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 const choose=async(page,id:string)=>page.getByRole('combobox',{name:'Seleziona un elemento',exact:true}).selectOption(id);
 test.beforeEach(async({page})=>{await page.goto('./');});
+test.afterEach(async({page},info)=>{await page.screenshot({path:info.outputPath('editor.png'),fullPage:true});});
 test('card edits, undo/redo, hidden recovery, lock, reset and saved draft',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await expect(page.getByRole('dialog')).toHaveCount(0);
