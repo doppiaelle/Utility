@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {applyEdits,normalizeEdits,normalizeExtras,renderExtras} from '../src/liveModel.ts';
+import {applyEdits,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
 const {window}=new JSDOM();globalThis.DOMParser=window.DOMParser;globalThis.XMLSerializer=window.XMLSerializer;
 const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml');
 const source='<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-live-id="area"><rect width="100" height="50" rx="4" fill="#fff" stroke="#111"/><text>A</text><g data-live-id="title"><text fill="#222">B</text></g></g><g data-live-id="slot"><path fill="#fff"/></g><path id="overlay"/></svg>';
@@ -17,3 +17,5 @@ test('invalid imported parameters cannot inject attributes or non-finite transfo
  assert.deepEqual(edits,{title:{y:3200,sx:.1,textColor:'#aabbcc',locked:true}});
 });
 test('custom texts are escaped, multiline and independent',()=>{const extras=normalizeExtras([{id:'custom-abc',kind:'text',text:'<script> &\nSeconda riga',x:10,y:20,w:30,h:40},{id:'custom-shape',kind:'shape',text:'',x:10,y:20,w:0,h:Infinity}]);const doc=parse(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras(extras)}</svg>`);assert.equal(doc.querySelector('script'),null);assert.equal(doc.querySelectorAll('tspan').length,2);assert.equal(doc.querySelector('text').textContent,'<script> &Seconda riga');assert.equal(doc.querySelector('rect').getAttribute('width'),'10');});
+
+test('removing a card field remaps its sibling and icon edits without reusing deleted styles',()=>{const result=removeIndexedEdits({'meta-0':{x:10},'meta-icon-0':{fill:'#123456'},'meta-1':{x:30},'meta-icon-1':{fill:'#abcdef'},'title':{y:4}},'meta',0);assert.deepEqual(result,{'meta-0':{x:30},'meta-icon-0':{fill:'#abcdef'},'title':{y:4}});});

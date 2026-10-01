@@ -1,4 +1,9 @@
 import {test,expect} from '@playwright/test';
+import type {Page} from '@playwright/test';
+async function drag(page:Page,from:{x:number;y:number},to:{x:number;y:number},touch:boolean){
+ if(touch){const cdp=await page.context().newCDPSession(page);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...from,id:1}]});for(let i=1;i<=4;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/4,y:from.y+(to.y-from.y)*i/4,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();}
+ else{await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:4});await page.mouse.up();}
+}
 const choose=async(page,id:string)=>page.getByRole('combobox',{name:'Seleziona un elemento',exact:true}).selectOption(id);
 test.beforeEach(async({page})=>{await page.goto('./');});
 test.afterEach(async({page},info)=>{await page.screenshot({path:info.outputPath('editor.png'),fullPage:true});});
@@ -16,14 +21,15 @@ test('card edits, undo/redo, hidden recovery, lock, reset and saved draft',async
  await page.reload();await expect(page.locator('[data-live-id=title] text')).toHaveText('Carta dal vivo');await expect(page.locator('[data-live-id=title]')).toHaveAttribute('transform',/translate\(45 0\)/);
  await choose(page,'title');await page.getByRole('button',{name:'Ripristina',exact:true}).click();await expect(page.locator('[data-live-id=title]')).not.toHaveAttribute('transform',/translate\(45/);expect(errors).toEqual([]);
 });
-test('canvas selection, drag and resize use scaled preview coordinates',async({page})=>{
- await page.locator('[data-live-id=title] text').click();await expect(page.getByLabel('Nome della carta',{exact:true})).toBeVisible();
+test('canvas selection, drag and resize use scaled preview coordinates',async({page,isMobile})=>{
+ if(isMobile)await page.locator('[data-live-id=title] text').tap();else await page.locator('[data-live-id=title] text').click();await expect(page.getByLabel('Nome della carta',{exact:true})).toBeVisible();
  const text=page.locator('[data-live-id=title] text'),b=await text.boundingBox();expect(b).toBeTruthy();
- await page.mouse.move(b!.x+b!.width/2,b!.y+b!.height/2);await page.mouse.down();await page.mouse.move(b!.x+b!.width/2+20,b!.y+b!.height/2+15,{steps:4});await page.mouse.up();
+ await drag(page,{x:b!.x+b!.width/2,y:b!.y+b!.height/2},{x:b!.x+b!.width/2+20,y:b!.y+b!.height/2+15},!!isMobile);
  await expect(page.getByLabel('Sposta a destra / sinistra',{exact:true})).not.toHaveValue('0');
- const handle=page.locator('[data-live-handle=resize]'),h=await handle.boundingBox();expect(h).toBeTruthy();await page.mouse.move(h!.x+h!.width/2,h!.y+h!.height/2);await page.mouse.down();await page.mouse.move(h!.x+h!.width/2+15,h!.y+h!.height/2+10,{steps:4});await page.mouse.up();
+ const handle=page.locator('[data-live-handle=resize]'),h=await handle.boundingBox();expect(h).toBeTruthy();await drag(page,{x:h!.x+h!.width/2,y:h!.y+h!.height/2},{x:h!.x+h!.width/2+15,y:h!.y+h!.height/2+10},!!isMobile);
  await expect(page.getByLabel('Larghezza (×)',{exact:true})).not.toHaveValue('1');
  await page.getByRole('button',{name:'Annulla',exact:true}).click();await expect(page.getByLabel('Larghezza (×)',{exact:true})).toHaveValue('1');
+ const r=await page.locator('[data-live-handle=rotate]').boundingBox();expect(r).toBeTruthy();await drag(page,{x:r!.x+r!.width/2,y:r!.y+r!.height/2},{x:r!.x+r!.width/2+35,y:r!.y+r!.height/2+20},!!isMobile);await expect(page.getByLabel('Rotazione (°)',{exact:true})).not.toHaveValue('0');
 });
 test('custom text, styles and SVG export match the canvas',async({page})=>{
  await page.getByRole('button',{name:'+ Testo',exact:true}).click();await page.getByLabel('Testo libero',{exact:true}).fill('Testo <libero>\nSeconda riga');

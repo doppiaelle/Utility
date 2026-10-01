@@ -3,7 +3,7 @@ import{createRoot}from'react-dom/client';
 import jsPDF from'jspdf';
 import'./styles.css';
 import {LiveEditor} from './LiveEditor';
-import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras} from './liveModel';
+import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from './liveModel';
 import type {LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import TerrainEditor,{EditorSwitcher}from'./TerrainEditor';
@@ -469,21 +469,21 @@ function App(){
         <details className="settingsGroup"><summary><span><b>Slot</b><small>Archetipo, tipo, font e campi opzionali</small></span><i>›</i></summary><div className="settingsBody">
           <TypographyControls label="Archetipi / slot" value={typography.meta} onChange={patch=>updateTypography('meta',patch)} min={9} max={24}/>
           <OpacityField label="Opacità globale slot" value={card.layers?.meta} onChange={v=>updateLayer('meta',v)}/>
-          {card.meta.map((m,i)=><div className="itemEditor" key={i}><div className="itemHeader"><b>Slot {i+1}</b><button onClick={()=>update({meta:card.meta.filter((_,j)=>j!==i)})}>Rimuovi</button></div><input value={m.value} onChange={e=>{const n=[...card.meta];n[i]={...m,value:e.target.value};update({meta:n})}}/><OpacityField label="Opacità" value={m.opacity} onChange={v=>{const n=[...card.meta];n[i]={...m,opacity:v};update({meta:n})}}/></div>)}
+          {card.meta.map((m,i)=><div className="itemEditor" key={i}><div className="itemHeader"><b>Slot {i+1}</b><button onClick={()=>update({meta:card.meta.filter((_,j)=>j!==i),liveEdits:removeIndexedEdits(card.liveEdits,'meta',i)})}>Rimuovi</button></div><input value={m.value} onChange={e=>{const n=[...card.meta];n[i]={...m,value:e.target.value};update({meta:n})}}/><OpacityField label="Opacità" value={m.opacity} onChange={v=>{const n=[...card.meta];n[i]={...m,opacity:v};update({meta:n})}}/></div>)}
           <button className="wideButton" onClick={()=>update({meta:[...card.meta,{label:'',value:'Campo',opacity:1}]})}>+ Aggiungi slot</button>
         </div></details>
 
         <details className="settingsGroup"><summary><span><b>Effetti</b><small>Box, font e sottocampi testuali</small></span><i>›</i></summary><div className="settingsBody">
           <TypographyControls label="Effetti" value={typography.effect} onChange={patch=>updateTypography('effect',patch)} min={9} max={26}/>
           <OpacityField label="Opacità box effetto" value={card.layers?.effect} onChange={v=>updateLayer('effect',v)}/>
-          {card.effects.map((m,i)=><div className="itemEditor" key={i}><div className="itemHeader"><b>Effetto {i+1}</b><button onClick={()=>update({effects:card.effects.filter((_,j)=>j!==i)})}>Rimuovi</button></div><input placeholder="Etichetta" value={m.label} onChange={e=>{const n=[...card.effects];n[i]={...m,label:e.target.value};update({effects:n})}}/><textarea placeholder="Testo" value={m.value} onChange={e=>{const n=[...card.effects];n[i]={...m,value:e.target.value};update({effects:n})}}/><OpacityField label="Opacità testo" value={m.opacity} onChange={v=>{const n=[...card.effects];n[i]={...m,opacity:v};update({effects:n})}}/></div>)}
+          {card.effects.map((m,i)=><div className="itemEditor" key={i}><div className="itemHeader"><b>Effetto {i+1}</b><button onClick={()=>update({effects:card.effects.filter((_,j)=>j!==i),liveEdits:removeIndexedEdits(card.liveEdits,'effect',i)})}>Rimuovi</button></div><input placeholder="Etichetta" value={m.label} onChange={e=>{const n=[...card.effects];n[i]={...m,label:e.target.value};update({effects:n})}}/><textarea placeholder="Testo" value={m.value} onChange={e=>{const n=[...card.effects];n[i]={...m,value:e.target.value};update({effects:n})}}/><OpacityField label="Opacità testo" value={m.opacity} onChange={v=>{const n=[...card.effects];n[i]={...m,opacity:v};update({effects:n})}}/></div>)}
           <button className="wideButton" onClick={()=>update({effects:[...card.effects,{label:'',value:'Dettaglio',opacity:1}]})}>+ Aggiungi effetto</button>
         </div></details>
 
         <details className="settingsGroup"><summary><span><b>Statistiche</b><small>ATK, RES, PRF, font e varianti</small></span><i>›</i></summary><div className="settingsBody">
           <TypographyControls label="Statistiche" value={typography.stats} onChange={patch=>updateTypography('stats',patch)} min={10} max={28}/>
           <OpacityField label="Opacità statistiche" value={card.layers?.stats} onChange={v=>updateLayer('stats',v)}/><OpacityField label="Opacità ID" value={card.layers?.id} onChange={v=>updateLayer('id',v)}/>
-          {card.stats.map((s,i)=><div className="itemEditor" key={i}><div className="itemHeader"><b>{s.kind||`Stat ${i+1}`}</b><button onClick={()=>update({stats:card.stats.filter((_,j)=>j!==i)})}>Rimuovi</button></div><div className="fieldGrid"><input value={s.kind} onChange={e=>{const n=[...card.stats];n[i]={...s,kind:e.target.value};update({stats:n})}}/><input placeholder="Valore" value={s.value} onChange={e=>{const n=[...card.stats];n[i]={...s,value:e.target.value};update({stats:n})}}/></div><OpacityField label="Opacità" value={s.opacity} onChange={v=>{const n=[...card.stats];n[i]={...s,opacity:v};update({stats:n})}}/></div>)}
+          {card.stats.map((s,i)=><div className="itemEditor" key={i}><div className="itemHeader"><b>{s.kind||`Stat ${i+1}`}</b><button onClick={()=>update({stats:card.stats.filter((_,j)=>j!==i),liveEdits:removeIndexedEdits(card.liveEdits,'stat',i)})}>Rimuovi</button></div><div className="fieldGrid"><input value={s.kind} onChange={e=>{const n=[...card.stats];n[i]={...s,kind:e.target.value};update({stats:n})}}/><input placeholder="Valore" value={s.value} onChange={e=>{const n=[...card.stats];n[i]={...s,value:e.target.value};update({stats:n})}}/></div><OpacityField label="Opacità" value={s.opacity} onChange={v=>{const n=[...card.stats];n[i]={...s,opacity:v};update({stats:n})}}/></div>)}
           <button className="wideButton" onClick={()=>update({stats:[...card.stats,{kind:'STAT',value:'',opacity:1}]})}>+ Aggiungi statistica</button>
         </div></details>
 

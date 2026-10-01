@@ -49,3 +49,10 @@ export type ExtraElement={id:string;kind:'text'|'shape';text:string;x:number;y:n
 export function normalizeExtras(raw:unknown):ExtraElement[]{return Array.isArray(raw)?raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&['text','shape'].includes(v.kind)).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(1600,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(920,v.h)):80})):[];}
 const escapeText=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!));
 export function renderExtras(raw:ExtraElement[]|undefined){return normalizeExtras(raw).map(v=>editable(v.id,v.kind==='text'?'Testo aggiunto':'Forma aggiunta',v.kind==='text'?`<text x="${v.x}" y="${v.y}" fill="#f4efe5" font-family="Arial" font-size="24">${v.text.split('\n').map((line,i)=>`<tspan x="${v.x}" dy="${i?1.3:0}em">${escapeText(line)}</tspan>`).join('')}</text>`:`<rect x="${v.x}" y="${v.y}" width="${v.w}" height="${v.h}" rx="12" fill="#1d5c6b" stroke="#eee6da" stroke-width="2"/>`)).join('');}
+
+/** Array-backed card fields keep their edits when a preceding field is removed. */
+export function removeIndexedEdits(raw:LiveEdits|undefined,prefix:'meta'|'effect'|'stat',index:number):LiveEdits{
+  const result:LiveEdits={};
+  for(const [id,edit] of Object.entries(normalizeEdits(raw))){const match=id.match(new RegExp(`^(${prefix}-(?:icon-)?)(\\d+)$`));if(!match){result[id]=edit;continue;}const n=Number(match[2]);if(n!==index)result[`${match[1]}${n>index?n-1:n}`]=edit;}
+  return result;
+}
