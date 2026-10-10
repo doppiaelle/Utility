@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {applyEdits,blankEdits,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
+import {applyEdits,blankEdits,fieldData,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
 const {window}=new JSDOM();globalThis.DOMParser=window.DOMParser;globalThis.XMLSerializer=window.XMLSerializer;
 const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml');
 const source='<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-live-id="area"><rect width="100" height="50" rx="4" fill="#fff" stroke="#111"/><text>A</text><g data-live-id="title"><text fill="#222">B</text></g></g><g data-live-id="slot"><path fill="#fff"/></g><path id="overlay"/></svg>';
@@ -48,4 +48,13 @@ test('templates drop anything malformed and re-validate their contents',()=>{
 test('blank canvas hides built-in blocks, keeps their other edits and ignores free elements',()=>{
  const edits=blankEdits(['title','cost','custom-9'],{title:{x:3,fill:'#112233'},'custom-9':{x:4}});
  assert.deepEqual(edits,{title:{x:3,fill:'#112233',hidden:true},cost:{hidden:true}});
+});
+
+test('a linked text shows the live value, escaped, and falls back to its own text',()=>{
+ const extras=normalizeExtras([{id:'custom-a',kind:'text',text:'fallback',bind:'name',x:0,y:0,w:10,h:10},{id:'custom-b',kind:'text',text:'own',bind:'missing',x:0,y:0,w:10,h:10},{id:'custom-c',kind:'text',text:'t',bind:'a"onload="x',x:0,y:0,w:10,h:10},{id:'custom-d',kind:'text',text:'toString',bind:'toString',x:0,y:0,w:10,h:10},{id:'custom-e',kind:'ellipse',bind:'name',x:0,y:0,w:10,h:10}]);
+ assert.deepEqual(extras.map(v=>v.bind),['name','missing',undefined,'toString',undefined]);
+ const doc=parse(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras(extras,fieldData([{key:'name',label:'Nome',value:'Drago <A>\nrosso'}]))}</svg>`);
+ const texts=Array.from(doc.querySelectorAll('[data-live-id] text')).map(t=>Array.from(t.querySelectorAll('tspan')).map(s=>s.textContent));
+ assert.deepEqual(texts,[['Drago <A>','rosso'],['own'],['t'],['toString']]);
+ assert.equal(renderExtras(extras),renderExtras(extras,{}));
 });

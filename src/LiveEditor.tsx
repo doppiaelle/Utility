@@ -1,10 +1,10 @@
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {EXTRA_KINDS,ICONS,TEMPLATE_LIMIT,blankEdits,isImageSrc,normalizeEdits,normalizeTemplates} from './liveModel';
-import type {ElementEdit,ExtraElement,ExtraKind,LayoutTemplate,LiveEdits} from './liveModel';
+import type {DataField,ElementEdit,ExtraElement,ExtraKind,LayoutTemplate,LiveEdits} from './liveModel';
 import './live.css';
 
 type History={undo:()=>void;redo:()=>void;begin:()=>void;end:()=>void;canUndo:boolean;canRedo:boolean};
-type Props={kind:'card'|'terrain';markup:string;width:number;height:number;edits?:LiveEdits;onChange:(edits:LiveEdits)=>void;history:History;children:(id:string)=>React.ReactNode;onAdvanced:()=>void;extras?:ExtraElement[];onExtras:(extras:ExtraElement[],edits:LiveEdits)=>void};
+type Props={kind:'card'|'terrain';markup:string;width:number;height:number;edits?:LiveEdits;onChange:(edits:LiveEdits)=>void;history:History;children:(id:string)=>React.ReactNode;onAdvanced:()=>void;fields?:DataField[];extras?:ExtraElement[];onExtras:(extras:ExtraElement[],edits:LiveEdits)=>void};
 type Box={x:number;y:number;w:number;h:number;matrix:string;handle?:number};
 type Rect={l:number;t:number;r:number;b:number};
 type Measured=Rect&{id:string;m:DOMMatrix};
@@ -32,12 +32,13 @@ function readImage(file:File,done:(src:string,w:number,h:number)=>void,fail:()=>
     if(isImageSrc(src))done(src,c.width,c.height);else fail();};
   im.onerror=()=>{URL.revokeObjectURL(url);fail();};im.src=url;
 }
-export function LiveEditor({kind,markup,width,height,edits:raw,onChange,history,children,onAdvanced,extras=[],onExtras}:Props){
+export function LiveEditor({kind,markup,width,height,edits:raw,onChange,history,children,onAdvanced,fields=[],extras=[],onExtras}:Props){
   const edits=normalizeEdits(raw),[selected,setSelected]=useState(''),[more,setMore]=useState<string[]>([]),[multi,setMulti]=useState(false),[others,setOthers]=useState<Box[]>([]),[zoom,setZoom]=useState(1),[snap,setSnap]=useState(true),[panel,setPanel]=useState(true),[box,setBox]=useState<Box|null>(null),[appearance,setAppearance]=useState<Record<string,string>>({}),[fitWidth,setFitWidth]=useState(400),[layers,setLayers]=useState<{id:string;label:string;parent:number}[]>([]),[guides,setGuides]=useState<{x?:number;y?:number}|null>(null),[notice,setNotice]=useState(''),[templates,setTemplates]=useState(loadTemplates),[tplOpen,setTplOpen]=useState(false),[tplName,setTplName]=useState('');
   const select=(id:string)=>{setSelected(id);setMore([]);};
   const group=selected?[selected,...more]:[];
   const stage=useRef<HTMLDivElement>(null),canvas=useRef<HTMLDivElement>(null),editor=useRef<HTMLDivElement>(null),file=useRef<HTMLInputElement>(null),fileTarget=useRef(''),gesture=useRef<Gesture|null>(null),latest=useRef({edits,onChange,history});latest.current={edits,onChange,history};
   const e=edits[selected]||{},locked=!!e.locked,item=extras.find(v=>v.id===selected),full=extras.length>=100;
+  const linked=item?.kind==='text'&&item.bind?fields.find(f=>f.key===item.bind):undefined;
   const setItem=(p:Partial<ExtraElement>)=>onExtras(extras.map(v=>v.id===selected?{...v,...p}:v),edits);
   const add=(kind:ExtraKind,more:Partial<ExtraElement>={})=>{if(full)return;
     const id=`custom-${crypto.randomUUID()}`,wide=kind==='text'||kind==='shape',w=more.w??(kind==='line'?200:wide?180:120),h=more.h??(kind==='line'?20:wide?80:120);
@@ -160,7 +161,8 @@ export function LiveEditor({kind,markup,width,height,edits:raw,onChange,history,
         <div className="liveActions"><button onClick={()=>setGroup({locked:true})}>Blocca tutti</button><button onClick={()=>setGroup({hidden:true})}>Nascondi tutti</button><button onClick={deleteGroup}>Elimina</button></div>
         <small>Trascina uno dei blocchi selezionati per spostarli insieme; le frecce muovono tutto il gruppo. “Elimina” toglie gli elementi aggiunti e nasconde gli altri.</small></>
       :selected?<><header><strong>{layers.find(l=>l.id===selected)?.label}</strong><button aria-label="Deseleziona" onClick={()=>select('')}>×</button></header><div className="liveActions"><button onClick={()=>patch({locked:!locked})}>{locked?'Sblocca':'Blocca'}</button><button disabled={locked} onClick={()=>patch({hidden:!e.hidden})}>{e.hidden?'Mostra':'Nascondi'}</button><button disabled={locked} onClick={()=>{const next={...edits};delete next[selected];onChange(next);}}>Ripristina</button></div>{item&&<div className="liveActions"><button disabled={locked||full} onClick={duplicate}>Duplica</button><button disabled={locked} onClick={remove}>Elimina elemento aggiunto</button></div>}<fieldset disabled={locked} className="liveContent">{!item?children(selected):<>
-        {item.kind==='text'&&<label>Testo libero<textarea aria-label="Testo libero" value={item.text} onChange={ev=>setItem({text:ev.target.value})}/></label>}
+        {item.kind==='text'&&<>{fields.length>0&&<label>Collega a un campo<select aria-label="Collega a un campo" value={item.bind??''} onChange={ev=>setItem({bind:ev.target.value||undefined})}><option value="">Testo libero</option>{item.bind&&!fields.some(f=>f.key===item.bind)&&<option value={item.bind}>{item.bind} (assente)</option>}{fields.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select></label>}
+          {linked?<small>Mostra «{linked.value||'vuoto'}»: si aggiorna con la carta. Modifica il valore dal campo originale.</small>:<label>Testo libero<textarea aria-label="Testo libero" value={item.text} onChange={ev=>setItem({text:ev.target.value})}/></label>}</>}
         {SHAPE_KINDS.includes(item.kind)&&<label>Forma<select aria-label="Forma" value={item.kind} onChange={ev=>setItem({kind:ev.target.value as ExtraKind})}>{SHAPE_KINDS.map(k=><option key={k} value={k}>{EXTRA_KINDS[k]}</option>)}</select></label>}
         {item.kind==='icon'&&<label>Icona<select aria-label="Icona" value={item.icon} onChange={ev=>setItem({icon:ev.target.value})}>{Object.entries(ICONS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>}
         {item.kind==='image'&&<button type="button" onClick={()=>pickImage(item.id)}>Sostituisci immagine</button>}</>}</fieldset>

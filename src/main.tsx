@@ -4,7 +4,8 @@ import jsPDF from'jspdf';
 import'./styles.css';
 import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from './liveModel';
-import type {LiveEdits,ExtraElement} from './liveModel';
+import {fieldData} from './liveModel';
+import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import TerrainEditor,{EditorSwitcher}from'./TerrainEditor';
 
@@ -319,6 +320,13 @@ function renderStats(stats:Stat[],id:string,statsOpacity:number,idOpacity:number
   return{statNodes,idNode};
 }
 
+/** Values a free text can be linked to, so one layout fits every card. */
+const cardFields=(c:Card):DataField[]=>[
+  {key:'name',label:'Nome',value:c.name},{key:'scope',label:'Ambito',value:c.scope},{key:'cost',label:'Costo',value:c.cost??''},{key:'type',label:'Tipologia',value:TYPES[c.type]},{key:'rarity',label:'Rarità',value:RARITIES[c.rarity??'common']},{key:'id',label:'Codice carta',value:c.id},
+  ...c.meta.map((m,i)=>({key:`meta.${i+1}`,label:`Dettaglio ${i+1}${m.label?` · ${m.label}`:''}`,value:m.value})),
+  ...c.effects.flatMap((m,i)=>[{key:`effect.${i+1}`,label:`Effetto ${i+1} · testo`,value:m.value},{key:`effect.${i+1}.label`,label:`Effetto ${i+1} · titolo`,value:m.label}]),
+  ...c.stats.map(x=>({key:`stat.${x.kind}`,label:`Statistica ${x.kind}`,value:x.value}))
+];
 function svg(card:Card){
   const theme=card.scopeColor||'#1d5c6b',layers={...DEFAULT_LAYERS,...card.layers},frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common';
   const scale=clamp(card.artScale??1,.4,3.5),ox=card.artX??0,oy=card.artY??0,baseX=20,baseY=20,baseW=590,baseH=840,iw=baseW*scale,ih=baseH*scale,ix=baseX-(iw-baseW)/2+ox,iy=baseY-(ih-baseH)/2+oy;
@@ -345,7 +353,7 @@ function svg(card:Card){
   ${renderSlots(card.meta,metaO,theme,metaY,contentX,contentW,typography.meta)}
   ${hasEffects?`<g data-live-id="effects" data-live-label="Riquadro effetti" opacity="${effectO}"><rect x="${contentX}" y="${effectY}" width="${contentW}" height="${effectH}" rx="18" fill="url(#paperGrad)" fill-opacity=".78" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.2"/><rect x="${contentX+5}" y="${effectY+5}" width="${contentW-10}" height="${effectH-10}" rx="14" fill="none" stroke="#173040" stroke-width="1.4" opacity=".92"/>${renderEffects(card.effects,effectY,contentX,contentW,effectH,typography.effect)}</g>`:''}
   ${statNodes}${idNode}
-  ${editable('rarity-surface','Riflessi e finitura',renderRaritySurface(rarity))}${renderExtras(card.extras)}
+  ${editable('rarity-surface','Riflessi e finitura',renderRaritySurface(rarity))}${renderExtras(card.extras,fieldData(cardFields(card)))}
   </svg>`,card.liveEdits);
 }
 
@@ -399,7 +407,7 @@ function App(){
   return <div className="appShell">
     <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
     {saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}
-    {liveMode?<LiveEditor kind="card" markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
+    {liveMode?<LiveEditor kind="card" fields={cardFields(card)} markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
       const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea aria-label={label} value={value} onChange={e=>change(e.target.value)}/></label>;
       if(id==='header'||id==='title')return field('Nome della carta',card.name,name=>update({name}));
       if(id==='cost'||id==='cost-value')return field('Costo',card.cost||'',cost=>update({cost}));

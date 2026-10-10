@@ -106,3 +106,18 @@ test('multi-selection aligns, distributes and moves together; layers reorder',as
  const after=await names();expect(after.indexOf('Forma aggiunta 3')).toBe(i+1);
  expect(await page.locator('.liveArtwork [data-live-id^=custom-]').evaluateAll(n=>n.map(v=>v.getAttribute('data-live-label')))).toEqual(['Forma aggiunta 1','Forma aggiunta 3','Forma aggiunta 2']);expect(errors).toEqual([]);
 });
+
+test('a linked text follows the card data and survives reload',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('button',{name:'+ Testo',exact:true}).click();
+ await page.getByLabel('Collega a un campo',{exact:true}).selectOption({label:'Nome'});
+ const linked=page.locator('.liveArtwork [data-live-id^=custom-] text');await expect(linked).toHaveText('Nome Carta');await expect(page.getByLabel('Testo libero',{exact:true})).toHaveCount(0);
+ await choose(page,'title');await page.getByLabel('Nome della carta',{exact:true}).fill('Drago <rosso>');
+ await expect(linked).toHaveText('Drago <rosso>');
+ await page.reload();await expect(page.locator('.liveArtwork [data-live-id^=custom-] text')).toHaveText('Drago <rosso>');expect(errors).toEqual([]);
+});
+test('terrain texts can show the terrain name',async({page})=>{
+ await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();
+ await page.getByRole('button',{name:'+ Testo',exact:true}).click();await page.getByLabel('Collega a un campo',{exact:true}).selectOption({label:'Nome del terreno'});
+ await expect(page.locator('.liveArtwork [data-live-id^=custom-] text')).not.toHaveText('Nuovo testo');
+});

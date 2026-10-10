@@ -60,22 +60,26 @@ export const ICONS:Record<string,{label:string;body:string}>={
   arrow:{label:'Freccia',body:'<path d="M-11 0h21M3-7l7 7-7 7"/>'},
   gem:{label:'Gemma',body:'<path d="M0-12 12 0 0 12-12 0ZM-12 0h24M0-12-5 0 0 12 5 0Z"/>'}
 };
-export type ExtraElement={id:string;kind:ExtraKind;text:string;x:number;y:number;w:number;h:number;src?:string;icon?:string};
+/** A value the card or terrain already owns, offered to text elements so a layout can be drawn once. */
+export type DataField={key:string;label:string;value:string};
+export const fieldData=(fields:DataField[]):Record<string,string>=>Object.fromEntries(fields.map(f=>[f.key,f.value]));
+export type ExtraElement={id:string;kind:ExtraKind;text:string;x:number;y:number;w:number;h:number;src?:string;icon?:string;bind?:string};
+const isBind=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][\w.]{0,40}$/i.test(v);
 /** Embedded images only: exports stay self-contained and nothing is fetched. */
 export const isImageSrc=(v:unknown):v is string=>typeof v==='string'&&v.length<=3_000_000&&/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/.test(v);
 export function normalizeExtras(raw:unknown):ExtraElement[]{
   if(!Array.isArray(raw))return[];
-  return raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&Object.hasOwn(EXTRA_KINDS,v.kind)&&(v.kind!=='image'||isImageSrc(v.src))).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(1600,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(920,v.h)):80,...(v.kind==='image'?{src:v.src}:{}),...(v.kind==='icon'?{icon:Object.hasOwn(ICONS,v.icon)?v.icon:'star'}:{})}));
+  return raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&Object.hasOwn(EXTRA_KINDS,v.kind)&&(v.kind!=='image'||isImageSrc(v.src))).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(1600,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(920,v.h)):80,...(v.kind==='image'?{src:v.src}:{}),...(v.kind==='icon'?{icon:Object.hasOwn(ICONS,v.icon)?v.icon:'star'}:{}),...(v.kind==='text'&&isBind(v.bind)?{bind:v.bind}:{})}));
 }
 const escapeText=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!));
 const n2=(n:number)=>Math.round(n*100)/100;
 const SHAPE='fill="#1d5c6b" stroke="#eee6da" stroke-width="2"';
-function extraBody(v:ExtraElement):string{
+function extraBody(v:ExtraElement,data?:Record<string,string>):string{
   const {x,y,w,h}=v,poly=(points:[number,number][])=>`<path d="M${points.map(([px,py])=>`${n2(x+px*w)} ${n2(y+py*h)}`).join('L')}Z" ${SHAPE} stroke-linejoin="round"/>`;
   // Invisible hit area: thin strokes stay easy to pick with a finger.
   const hit=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" pointer-events="all"/>`;
   switch(v.kind){
-    case'text':return`<text x="${x}" y="${y}" fill="#f4efe5" font-family="Arial" font-size="24">${v.text.split('\n').map((line,i)=>`<tspan x="${x}" dy="${i?1.3:0}em">${escapeText(line)}</tspan>`).join('')}</text>`;
+    case'text':{const text=v.bind&&data&&Object.hasOwn(data,v.bind)?data[v.bind]:v.text;return`<text x="${x}" y="${y}" fill="#f4efe5" font-family="Arial" font-size="24">${text.split('\n').map((line,i)=>`<tspan x="${x}" dy="${i?1.3:0}em">${escapeText(line)}</tspan>`).join('')}</text>`;}
     case'ellipse':return`<ellipse cx="${x+w/2}" cy="${y+h/2}" rx="${w/2}" ry="${h/2}" ${SHAPE}/>`;
     case'line':return`${hit}<line x1="${x}" y1="${y+h/2}" x2="${x+w}" y2="${y+h/2}" stroke="#eee6da" stroke-width="4" stroke-linecap="round"/>`;
     case'triangle':return poly([[.5,0],[1,1],[0,1]]);
@@ -87,7 +91,7 @@ function extraBody(v:ExtraElement):string{
     default:return`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" ${SHAPE}/>`;
   }
 }
-export function renderExtras(raw:ExtraElement[]|undefined){return normalizeExtras(raw).map((v,i)=>editable(v.id,`${v.kind==='text'?'Testo aggiunto':v.kind==='shape'?'Forma aggiunta':EXTRA_KINDS[v.kind]} ${i+1}`,extraBody(v))).join('');}
+export function renderExtras(raw:ExtraElement[]|undefined,data?:Record<string,string>){return normalizeExtras(raw).map((v,i)=>editable(v.id,`${v.kind==='text'?'Testo aggiunto':v.kind==='shape'?'Forma aggiunta':EXTRA_KINDS[v.kind]} ${i+1}`,extraBody(v,data))).join('');}
 
 /** Array-backed card fields keep their edits when a preceding field is removed. */
 export function removeIndexedEdits(raw:LiveEdits|undefined,prefix:'meta'|'effect'|'stat',index:number):LiveEdits{
