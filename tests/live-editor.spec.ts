@@ -211,3 +211,41 @@ test('pictures: insert, exact size in mm, ratio lock, print resolution, fit, dro
  }
  await page.reload();await expect(page.locator('.liveArtwork [data-live-id^=custom-] image').first()).toHaveAttribute('href',/^data:image\//);expect(errors).toEqual([]);
 });
+
+test('every card layout keeps title, cost, details, text and values apart and inside the sheet',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ for(const label of['Classica','Finestra','Molto testo','Illustrazione piena','Titolo in basso']){
+  const button=page.getByRole('button',{name:`Impostazione ${label}`,exact:true});await button.click();await expect(button).toHaveAttribute('aria-pressed','true');
+  const boxes=await page.evaluate(()=>{const sheet=document.querySelector('.liveArtwork svg')!.getBoundingClientRect(),get=(id:string)=>{const r=document.querySelector(`.liveArtwork [data-live-id="${id}"]`)!.getBoundingClientRect();return{id,l:r.left-sheet.left,t:r.top-sheet.top,r:r.right-sheet.left,b:r.bottom-sheet.top};};return{w:sheet.width,h:sheet.height,items:['header','cost','meta-0','effects','stat-0'].map(get)};});
+  for(const a of boxes.items){expect(a.l,`${label} ${a.id}`).toBeGreaterThanOrEqual(-1);expect(a.t,`${label} ${a.id}`).toBeGreaterThanOrEqual(-1);expect(a.r,`${label} ${a.id}`).toBeLessThanOrEqual(boxes.w+1);expect(a.b,`${label} ${a.id}`).toBeLessThanOrEqual(boxes.h+1);}
+  for(const [i,a] of boxes.items.entries())for(const b of boxes.items.slice(i+1)){const overlap=a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1;expect(overlap,`${label}: ${a.id} overlaps ${b.id}`).toBe(false);}
+ }
+ expect(errors).toEqual([]);
+});
+test('a new card layout resets block positions but keeps colours and visibility; themes persist',async({page})=>{
+ await choose(page,'title');await page.getByLabel('Sposta a destra / sinistra',{exact:true}).fill('45');
+ await expect(page.locator('[data-live-id=title]')).toHaveAttribute('transform',/translate\(45 0\)/);
+ await choose(page,'accents');await page.getByRole('button',{name:'Nascondi',exact:true}).click();
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ await page.getByRole('button',{name:'Impostazione Finestra',exact:true}).click();
+ await expect(page.locator('[data-live-id=title]')).not.toHaveAttribute('transform',/translate\(45/);await expect(page.locator('[data-live-id=accents]')).toHaveAttribute('display','none');
+ await expect(page.locator('.liveArtwork #artWindowClip-window')).toHaveCount(1);
+ await page.getByRole('button',{name:'Tema Brace',exact:true}).click();
+ const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem('kritoma.cardDraft')!));
+ expect(draft.layout).toBe('window');expect(draft.scopeColor).toBe('#b5452d');expect(draft.frame.framePreset).toBe('bevel');expect(draft.typography.title.family).toBe('Impact');
+ await page.reload();await page.getByRole('tab',{name:'Stile',exact:true}).click();await expect(page.getByRole('button',{name:'Impostazione Finestra',exact:true})).toHaveAttribute('aria-pressed','true');
+});
+test('terrain looks and themes: slots survive every look and the choice persists',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ const count=(prefix:string)=>page.locator(`.liveArtwork [data-live-id^=${prefix}]`).count();
+ for(const label of['Duello classico','Essenziale','Compatto']){await page.getByRole('button',{name:`Impostazione ${label}`,exact:true}).click();expect(await count('topLeftGroup-'),label).toBe(4);expect(await count('topRightGroup-'),label).toBe(4);expect(await count('centerGroup-'),label).toBe(3);}
+ await page.getByRole('button',{name:'Impostazione Zona centrale',exact:true}).click();expect(await count('topLeftGroup-')).toBe(0);expect(await count('centerGroup-')).toBe(3);
+ await page.getByRole('button',{name:'Tema Neon',exact:true}).click();
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('kritoma.terrain')!));expect(saved.look).toBe('campaign');expect(saved.backgroundColor).toBe('#0a0a14');expect(saved.outer.accentColor).toBe('#b36bff');
+ await page.getByRole('button',{name:'Impostazione Duello classico',exact:true}).click();expect(await count('topLeftGroup-')).toBe(4);
+ await page.reload();await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Impostazione Duello classico',exact:true})).toHaveAttribute('aria-pressed','true');expect(errors).toEqual([]);
+});
