@@ -11,6 +11,8 @@ import type {ImportedCard} from './importCards';
 import {BACK_LAYOUTS,DEFAULT_BACK,backFields,normalizeBack} from './back';
 import type {BackDesign,BackLayoutId} from './back';
 import {mix} from './color';
+import {ART_STYLES,pickStyle,placeholderDataUrl} from './placeholder';
+import type {ArtStyle} from './placeholder';
 import {PrintDialog} from './PrintDialog';
 import type {CardPrint} from './PrintDialog';
 import {cardSheetPdf,rasterizeJpeg} from './printPdf';
@@ -443,7 +445,7 @@ function App(){
   const store=useLocalStore(),history=useHistory<Card>(()=>{try{return normalizeCard(JSON.parse(localStorage.getItem('kritoma.cardDraft')||'null')||store.cards[0]||DEFAULT)}catch{return normalizeCard(store.cards[0]||DEFAULT)}}),card=history.value,setCard=history.set,[settingsOpen,setSettingsOpen]=useState(false);
   const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState(''),[printOpen,setPrintOpen]=useState(false),[deckPrint,setDeckPrint]=useState<Deck|null>(null);
   const [decks,setDecks]=useState<Deck[]>(()=>{try{return normalizeDecks(JSON.parse(localStorage.getItem(DECK_KEY)||'[]'))}catch{return[]}}),[roles,setRoles]=useState<Record<string,Role>>(()=>{try{return normalizeRoles(JSON.parse(localStorage.getItem(ROLES_KEY)||'{}'))}catch{return{}}});
-  const [side,setSide]=useState<'front'|'back'>('front');
+  const [side,setSide]=useState<'front'|'back'>('front'),[artStyle,setArtStyle]=useState<ArtStyle>('paesaggio');
   const backHistory=useHistory<BackDesign>(()=>{try{return normalizeBack(JSON.parse(localStorage.getItem('kritoma.back')||'null'))}catch{return DEFAULT_BACK}}),back=backHistory.value;
   useEffect(()=>{try{localStorage.setItem('kritoma.back',JSON.stringify(back))}catch{/* the back is small: a full browser is reported by the card draft */}},[back]);
   const updateBack=(p:Partial<BackDesign>)=>backHistory.set(normalizeBack({...back,...p}));
@@ -540,7 +542,7 @@ function App(){
   };
   const asImage=(c:Card)=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg(normalizeCard(c)));
   const inCollection=editorMode==='collection';
-  const collectionItems=useMemo<CollectionCard[]>(()=>inCollection?store.cards.map(c=>({id:c.id,name:c.name,typeLabel:TYPES[c.type]??'',scope:c.scope,scopeColor:c.scopeColor,rarity:c.rarity??'common',rarityLabel:RARITIES[c.rarity??'common']??'',copies:c.copies??1,thumb:asImage(c)})):[],[inCollection,store.cards]);
+  const collectionItems=useMemo<CollectionCard[]>(()=>inCollection?store.cards.map(c=>({id:c.id,name:c.name,typeLabel:TYPES[c.type]??'',scope:c.scope,scopeColor:c.scopeColor,rarity:c.rarity??'common',rarityLabel:RARITIES[c.rarity??'common']??'',copies:c.copies??1,thumb:asImage(c),hasArt:!!c.art})):[],[inCollection,store.cards]);
   const overview=useMemo(()=>inCollection?{thumb:asImage(card),back:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(backMarkup),saved:store.cards.some(c=>c.id===card.id&&JSON.stringify(normalizeCard(c))===JSON.stringify(normalizeCard(card))),terrain:terrainPreview(),templates:(()=>{try{return normalizeTemplates(JSON.parse(localStorage.getItem('kritoma.templates')||'[]')).length}catch{return 0}})()}:null,[inCollection,card,store.cards,backMarkup]);
   const printCards=async(o:CardPrint)=>{
     const backImage=o.back==='duplex'?await rasterizeJpeg(backMarkup,945,1320):undefined;
@@ -583,6 +585,7 @@ function App(){
       onOpenCard={id=>{const c=store.cards.find(v=>v.id===id);if(c){setCard(normalizeCard(c));setEditorMode('card');}}}
       onOpenDraft={()=>setEditorMode('card')} onOpenBack={()=>{setSide('back');setEditorMode('card');}} onOpenTerrain={()=>setEditorMode('terrain')} onSaveDraft={save}
       onImport={files=>importGame(files,{includeLore:true,open:false})}
+      onPlaceholders={()=>{const missing=store.cards.filter(c=>!c.art);if(!missing.length)return 0;const ids=new Set(missing.map(c=>c.id));return persist(store.cards.map(c=>ids.has(c.id)?{...c,art:placeholderDataUrl(c.id,c.scopeColor,pickStyle(c.id))}:c))?missing.length:0;}}
       onDecks={next=>{try{localStorage.setItem(DECK_KEY,JSON.stringify(next));setDecks(next);}catch{window.alert('Spazio del browser esaurito: le modifiche ai mazzi non sono state salvate.');}}}
       onPrintDeck={setDeckPrint} onCard={()=>setEditorMode('card')} onTerrain={()=>setEditorMode('terrain')}/>
       {deckPrint&&deckInfo&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={0} deck={{name:deckPrint.name,distinct:deckInfo.distinct+deckInfo.extra+deckInfo.goals-deckInfo.missing.length,mainCopies:deckPrint.cards.filter(c=>known.has(c.id)).reduce((n,c)=>n+c.copies,0),extraCount:[...deckPrint.extra,...deckPrint.goals].filter(id=>known.has(id)).length,skipped:deckInfo.missing.length}} onClose={()=>setDeckPrint(null)} onPrint={async o=>{await printCards(o);}}/>}</>;
@@ -599,7 +602,7 @@ function App(){
       if(/^meta-\d+$/.test(id)){const i=Number(id.split('-')[1]);return field('Informazione',card.meta[i]?.value||'',value=>update({meta:card.meta.map((m,j)=>j===i?{...m,value}:m)}));}
       if(id.startsWith('effect-')){const i=Number(id.split('-')[1]),item=card.effects[i];return item&&<>{field('Etichetta',item.label,label=>update({effects:card.effects.map((m,j)=>j===i?{...m,label}:m)}))}{field('Testo effetto',item.value,value=>update({effects:card.effects.map((m,j)=>j===i?{...m,value}:m)}))}</>;}
       if(/^stat-\d+$/.test(id)){const i=Number(id.split('-')[1]),item=card.stats[i];return item&&<>{field('Tipo di valore (ATK, RES, PRF, PV)',item.kind,kind=>update({stats:card.stats.map((m,j)=>j===i?{...m,kind}:m)}))}{field('Valore',item.value,value=>update({stats:card.stats.map((m,j)=>j===i?{...m,value}:m)}))}</>;}
-      if(id==='artwork')return <><label>Carica illustrazione<input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>update({art:String(r.result)});r.readAsDataURL(f);}}}/></label>{card.artPrompt&&<small className="liveArtPrompt">Descrizione prevista: {card.artPrompt}</small>}</>;
+      if(id==='artwork')return <><label>Carica illustrazione<input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=()=>update({art:String(r.result)});r.readAsDataURL(f);}}}/></label>{card.artPrompt&&<small className="liveArtPrompt">Descrizione prevista: {card.artPrompt}</small>}<label>Illustrazione segnaposto<select aria-label="Stile del segnaposto" value={artStyle} onChange={e=>setArtStyle(e.target.value as ArtStyle)}>{ART_STYLES.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select></label><div className="liveActions"><button onClick={()=>update({art:placeholderDataUrl(`${card.id}:${Math.floor(Math.random()*1e6)}`,card.scopeColor,artStyle)})}>Genera segnaposto</button>{card.art&&<button onClick={()=>update({art:undefined})}>Rimuovi illustrazione</button>}</div></>;
       if(id==='frame')return <label>Forma della cornice<select value={frame.framePreset} onChange={e=>updateFrame('framePreset',e.target.value as FramePreset)}>{FRAME_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>;
       if(id==='accents')return <label>Decorazione<select value={frame.accentPreset} onChange={e=>updateFrame('accentPreset',e.target.value as AccentPreset)}>{ACCENT_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>;
       if(id.startsWith('rarity-'))return <label>Finitura della carta<select value={rarity} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>;

@@ -5,12 +5,12 @@ import {DECK_STATUSES,addCard,deckSummary,duplicateDeck,newDeck,removeCard,setCo
 import type {Deck,Role} from './decks';
 import './collection.css';
 
-export type CollectionCard={id:string;name:string;typeLabel:string;scope:string;scopeColor:string;rarity:string;rarityLabel:string;copies:number;thumb:string};
+export type CollectionCard={id:string;name:string;typeLabel:string;scope:string;scopeColor:string;rarity:string;rarityLabel:string;copies:number;thumb:string;hasArt:boolean};
 type Props={
   cards:CollectionCard[];decks:Deck[];roles:Record<string,Role>;
   draft:{id:string;name:string;thumb:string;back:string;saved:boolean;terrain:{name:string;thumb:string}|null;templates:number};
   onOpenCard:(id:string)=>void;onOpenDraft:()=>void;onOpenBack:()=>void;onOpenTerrain:()=>void;onSaveDraft:()=>void;
-  onImport:(files:File[])=>Promise<string>;onDecks:(decks:Deck[])=>void;onPrintDeck:(deck:Deck)=>void;
+  onImport:(files:File[])=>Promise<string>;onPlaceholders:()=>number;onDecks:(decks:Deck[])=>void;onPrintDeck:(deck:Deck)=>void;
   onCard:()=>void;onTerrain:()=>void;
 };
 
@@ -24,7 +24,7 @@ export function Collection(p:Props){
   const shown=p.cards.filter(c=>(!scope||c.scope===scope)&&(!type||c.typeLabel===type)&&(!rarity||c.rarityLabel===rarity)&&(!q.trim()||`${c.name} ${c.id} ${c.scope}`.toLowerCase().includes(q.trim().toLowerCase())));
   const update=(next:Deck)=>p.onDecks(p.decks.map(d=>d.id===next.id?next:d));
   const run=async(list:FileList|null)=>{const found=Array.from(list??[]).filter(f=>/\.json$/i.test(f.name));if(!found.length){setMsg('Nessun file JSON trovato.');return;}setMsg('Importazione in corso…');setMsg(await p.onImport(found));};
-  const roleOf=(d:Deck)=>p.roles[d.role];
+  const roleOf=(d:Deck)=>p.roles[d.role],missingArt=p.cards.filter(c=>!c.hasArt).length;
   const row=(id:string,extra?:React.ReactNode,note?:string)=>{const c=byId.get(id);return <li key={id} className={c?'':'isMissing'}>{c?<img src={c.thumb} alt="" loading="lazy"/>:<span className="colNoThumb">?</span>}<span className="colRowName"><button className="colLink" disabled={!c} onClick={()=>c&&p.onOpenCard(id)}>{c?c.name:id}</button><small>{c?`${c.typeLabel} · ${c.scope}${note?' · '+note:''}`:'non importata: importa anche le carte'}</small></span>{extra}</li>;};
   return <div className="appShell collectionShell">
     <header className="topBar"><EditorSwitcher current="collection" onCard={p.onCard} onTerrain={p.onTerrain} onCollection={()=>{}}/></header>
@@ -35,7 +35,7 @@ export function Collection(p:Props){
         <div className="colDraft">{p.draft.terrain?<img className="isWide" src={p.draft.terrain.thumb} alt=""/>:<span className="colNoThumb">▤</span>}<div><b>{p.draft.terrain?.name??'Nessun terreno'}</b><small>Terreno in modifica</small><span><button onClick={p.onOpenTerrain}>Apri</button></span></div></div>
         <div className="colDraft"><span className="colNoThumb">◫</span><div><b>{p.draft.templates} {p.draft.templates===1?'modello':'modelli'}</b><small>Layout salvati, per carta e terreno</small></div></div>
       </div></section>
-      <section className="colImport"><button onClick={()=>files.current?.click()}>Importa file…</button><button onClick={()=>folder.current?.click()}>Importa cartella del gioco…</button>
+      <section className="colImport"><button onClick={()=>files.current?.click()}>Importa file…</button><button onClick={()=>folder.current?.click()}>Importa cartella del gioco…</button><button disabled={!missingArt} onClick={()=>{const n=p.onPlaceholders();setMsg(n?`Aggiunti ${n} ${n===1?'segnaposto':'segnaposto'}: sostituiscili con le illustrazioni vere quando le hai.`:'Nessun segnaposto aggiunto.');}}>{missingArt?`Segnaposto per le ${missingArt} carte senza illustrazione`:'Tutte le carte hanno un’illustrazione'}</button>
         <input ref={files} type="file" accept=".json,application/json" multiple hidden onChange={ev=>{void run(ev.target.files);ev.target.value='';}}/>
         <input ref={el=>{folder.current=el;el?.setAttribute('webkitdirectory','');}} type="file" multiple hidden aria-label="Cartella del gioco" onChange={ev=>{void run(ev.target.files);ev.target.value='';}}/>
         <span>Carte, mazzi e ruoli del repository del gioco; i file non riconosciuti vengono ignorati.</span>{msg&&<p role="status">{msg}</p>}</section>
