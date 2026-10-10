@@ -166,3 +166,10 @@ export function clearGeometry(raw:LiveEdits|undefined):LiveEdits{
 
 /** What the style tab shows: layout thumbnails and theme swatches. */
 export type StyleGallery={layoutTitle:string;active:string;layouts:{id:string;label:string;note:string;thumb:string}[];themes:{id:string;label:string;colors:string[]}[];onLayout:(id:string)=>void;onTheme:(id:string)=>void};
+
+/** The saved cards of the open editor, with what the "Carte" tab needs to browse and manage them. */
+export type CardLibrary={
+  items:{id:string;name:string;type:string;scope:string;copies:number;active:boolean}[];
+  onOpen:(id:string)=>void;onNew:()=>void;onDuplicate:(id:string)=>void;onDelete:(id:string)=>void;
+  onImport:(files:File[],o:{includeLore:boolean})=>Promise<string>;
+};
