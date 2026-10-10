@@ -121,3 +121,26 @@ test('terrain texts can show the terrain name',async({page})=>{
  await page.getByRole('button',{name:'+ Testo',exact:true}).click();await page.getByLabel('Collega a un campo',{exact:true}).selectOption({label:'Nome del terreno'});
  await expect(page.locator('.liveArtwork [data-live-id^=custom-] text')).not.toHaveText('Nuovo testo');
 });
+
+test('backup exports everything, rejects bad files and restores after the browser is cleared',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));let confirms=0;page.on('dialog',d=>{confirms++;void d.accept();});
+ await choose(page,'title');await page.getByLabel('Nome della carta',{exact:true}).fill('Carta di backup');
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();await page.getByLabel('Nome del modello',{exact:true}).fill('Mio modello');await page.getByRole('button',{name:'Salva come modello',exact:true}).click();
+ const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Esporta progetto (JSON)',exact:true}).click();const download=await downloadPromise;
+ expect(download.suggestedFilename()).toMatch(/^kritoma-progetto-\d{4}-\d{2}-\d{2}\.json$/);
+ const stream=await download.createReadStream();const chunks:Buffer[]=[];for await(const c of stream!)chunks.push(c);const json=Buffer.concat(chunks).toString();
+ expect(json).toContain('Carta di backup');expect(json).toContain('Mio modello');
+ await page.locator('input[type=file][accept*=json]').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{"format":"altro"}')});
+ await expect(page.getByRole('alert')).toContainText('Non è un backup');expect(confirms).toBe(0);
+ await page.evaluate(()=>localStorage.clear());await page.reload();await expect(page.locator('[data-live-id=title] text')).toHaveText('Nome Carta');
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();
+ await page.locator('input[type=file][accept*=json]').setInputFiles({name:'ok.json',mimeType:'application/json',buffer:Buffer.from(json)});
+ await expect(page.locator('[data-live-id=title] text')).toHaveText('Carta di backup');expect(confirms).toBe(1);
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.getByRole('button',{name:'Applica il modello Mio modello'})).toBeVisible();expect(errors).toEqual([]);
+});
+test('a crafted draft cannot run script or break the preview',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{localStorage.setItem('kritoma.cardDraft',JSON.stringify({name:'<img src=x onerror=window.__pwned=1>',scopeColor:'#fff" onload="window.__pwned=1',art:'javascript:window.__pwned=1',type:'nope',meta:'x',frame:{size:'3" onload="window.__pwned=1'}}));});
+ await page.goto('./');await expect(page.locator('.liveArtwork svg')).toBeVisible();
+ expect(await page.evaluate(()=>(window as unknown as {__pwned?:number}).__pwned)).toBeUndefined();expect(await page.locator('.liveArtwork [onload],.liveArtwork [onerror]').count()).toBe(0);
+});
