@@ -6,6 +6,9 @@ import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from './liveModel';
 import {clearGeometry,fieldData,safeSvg} from './liveModel';
 import {THEMES} from './themes';
+import {PrintDialog} from './PrintDialog';
+import type {CardPrint} from './PrintDialog';
+import {cardSheetPdf,rasterizeJpeg} from './printPdf';
 import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import TerrainEditor,{EditorSwitcher}from'./TerrainEditor';
@@ -396,7 +399,7 @@ function TypographyControls({label,value,onChange,min,max}:{label:string;value:T
 
 function App(){
   const store=useLocalStore(),history=useHistory<Card>(()=>{try{return normalizeCard(JSON.parse(localStorage.getItem('kritoma.cardDraft')||'null')||store.cards[0]||DEFAULT)}catch{return normalizeCard(store.cards[0]||DEFAULT)}}),card=history.value,setCard=history.set,[settingsOpen,setSettingsOpen]=useState(false);
-  const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState('');
+  const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState(''),[printOpen,setPrintOpen]=useState(false);
   useEffect(()=>{try{localStorage.setItem('kritoma.cardDraft',JSON.stringify(card));setSaveError('')}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.')}},[card]);
   const[editorMode,setEditorMode]=useState<'card'|'terrain'>('card');
   const [foilPreview,setFoilPreview]=useState(()=>localStorage.getItem('kritoma.foilPreview')!=='false');
@@ -422,6 +425,12 @@ function App(){
   const raster=(cb:(canvas:HTMLCanvasElement)=>void)=>{const u=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'})),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=1890;c.height=2640;c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);cb(c);URL.revokeObjectURL(u)};im.src=u};
   const exportPng=()=>raster(c=>c.toBlob(b=>b&&download(`${card.id}.png`,b),'image/png'));
   const exportPdf=()=>raster(c=>{const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:[63,88]});pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,63,88);pdf.save(`${card.id}-print.pdf`)});
+  const printCards=async(o:CardPrint)=>{
+    if(o.mode==='single'){exportPdf();return;}
+    const list=o.content==='saved'&&store.cards.length?store.cards:[card],parts:{image:string;copies:number}[]=[];
+    for(const c of list)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:o.content==='saved'?1:o.copies});
+    cardSheetPdf(parts,{page:o.page,marks:o.marks}).save(`${card.id}-foglio.pdf`);
+  };
   const frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common',previewFx=RARITY_PREVIEW[rarity];
   const resetTilt=()=>{draggingRef.current=false;setTilt(NEUTRAL_TILT)};
   const updateTilt=(e:React.PointerEvent<HTMLDivElement>,force=false)=>{
@@ -459,7 +468,7 @@ function App(){
       if(id.startsWith('rarity-'))return <label>Finitura della carta<select value={rarity} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>;
       return <small>Modifica l’aspetto con i controlli sotto. Aggiungi o rimuovi testi nelle impostazioni avanzate.</small>;
     }}</LiveEditor>:<main className="workspace"><div className="previewWrap"><div ref={previewRef} className={`interactiveCard rarity-${rarity}${tilt.active?' isActive':''}${foilPreview?'':' isDisabled'}`} style={previewStyle} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={resetTilt} onPointerLeave={handlePointerLeave} aria-label="Anteprima carta interattiva: muovi il mouse o trascina con il dito per simulare i riflessi"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/>{foilPreview&&<div className="foilPreviewLayers" aria-hidden="true"><div className="foilHolo"/><div className="foilSparkle"/><div className="foilGlare"/></div>}</div></div></main>}
-    <nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button><button onClick={exportPng}>PNG</button><button onClick={exportPdf}>PDF</button></nav>
+    <nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button><button onClick={exportPng}>PNG</button><button onClick={()=>setPrintOpen(true)}>PDF</button></nav>{printOpen&&<PrintDialog kind="card" savedCount={store.cards.length} onClose={()=>setPrintOpen(false)} onPrint={printCards}/>}
 
     {settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni carta">
       <div className="sheetHandle"/>
@@ -532,7 +541,7 @@ function App(){
           <button className="wideButton" onClick={()=>update({stats:[...card.stats,{kind:'STAT',value:'',opacity:1}]})}>+ Aggiungi statistica</button>
         </div></details>
 
-        <details className="settingsGroup"><summary><span><b>Esporta</b><small>Salvataggio e file finali</small></span><i>›</i></summary><div className="settingsBody exportGrid"><button onClick={save}>Salva cache</button><button onClick={exportSvg}>SVG</button><button onClick={exportPng}>PNG 300dpi</button><button onClick={exportPdf}>PDF stampa</button></div></details>
+        <details className="settingsGroup"><summary><span><b>Esporta</b><small>Salvataggio e file finali</small></span><i>›</i></summary><div className="settingsBody exportGrid"><button onClick={save}>Salva cache</button><button onClick={exportSvg}>SVG</button><button onClick={exportPng}>PNG 300dpi</button><button onClick={()=>setPrintOpen(true)}>PDF di stampa…</button></div></details>
       </div>
     </section></div>}
   </div>

@@ -249,3 +249,24 @@ test('terrain looks and themes: slots survive every look and the choice persists
  await page.reload();await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();await page.getByRole('tab',{name:'Stile',exact:true}).click();
  await expect(page.getByRole('button',{name:'Impostazione Duello classico',exact:true})).toHaveAttribute('aria-pressed','true');expect(errors).toEqual([]);
 });
+
+async function readDownload(download:import('@playwright/test').Download){const stream=await download.createReadStream();const chunks:Buffer[]=[];for await(const c of stream!)chunks.push(c);return Buffer.concat(chunks).toString('latin1');}
+const pdfPages=(pdf:string)=>(pdf.match(/\/Type\s*\/Page(?![s\w])/g)||[]).length;
+test('print dialog: a sheet of nine cards and a terrain split into pages',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('button',{name:'PDF',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Stampa'});await expect(dialog).toBeVisible();
+ await expect(dialog.getByRole('status')).toContainText('9 carte per pagina (3×3)');await expect(dialog.getByRole('status')).toContainText('9 carte su 1 pagina A4');
+ await dialog.getByLabel('Copie',{exact:true}).fill('20');await expect(dialog.getByRole('status')).toContainText('20 carte su 3 pagine A4');
+ await dialog.getByLabel('Dimensione della pagina',{exact:true}).selectOption('A3');await expect(dialog.getByRole('status')).toContainText('16 carte per pagina');
+ await dialog.getByLabel('Dimensione della pagina',{exact:true}).selectOption('A4');await dialog.getByLabel('Copie',{exact:true}).fill('10');
+ const first=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const sheet=await first;
+ expect(sheet.suggestedFilename()).toMatch(/-foglio\.pdf$/);const pdf=await readDownload(sheet);expect(pdf.startsWith('%PDF')).toBe(true);expect(pdfPages(pdf)).toBe(2);
+ await expect(dialog).toHaveCount(0);
+ await page.getByRole('button',{name:'PDF',exact:true}).click();await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Stampa'})).toHaveCount(0);
+ await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();
+ await page.getByRole('button',{name:'PDF',exact:true}).click();const t=page.getByRole('dialog',{name:'Stampa'});
+ await expect(t.getByRole('status')).toContainText('6 pagine A4 orizzontali (3×2)');
+ const second=page.waitForEvent('download');await t.getByRole('button',{name:'Crea PDF',exact:true}).click();const tiles=await second;
+ expect(tiles.suggestedFilename()).toMatch(/-pagine\.pdf$/);expect(pdfPages(await readDownload(tiles))).toBe(6);expect(errors).toEqual([]);
+});
