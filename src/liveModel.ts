@@ -63,13 +63,13 @@ export const ICONS:Record<string,{label:string;body:string}>={
 /** A value the card or terrain already owns, offered to text elements so a layout can be drawn once. */
 export type DataField={key:string;label:string;value:string};
 export const fieldData=(fields:DataField[]):Record<string,string>=>Object.fromEntries(fields.map(f=>[f.key,f.value]));
-export type ExtraElement={id:string;kind:ExtraKind;text:string;x:number;y:number;w:number;h:number;src?:string;icon?:string;bind?:string};
+export type ExtraElement={id:string;kind:ExtraKind;text:string;x:number;y:number;w:number;h:number;src?:string;icon?:string;bind?:string;nw?:number;nh?:number};
 const isBind=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][\w.]{0,40}$/i.test(v);
 /** Embedded images only: exports stay self-contained and nothing is fetched. */
 export const isImageSrc=(v:unknown):v is string=>typeof v==='string'&&v.length<=3_000_000&&/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/.test(v);
 export function normalizeExtras(raw:unknown):ExtraElement[]{
   if(!Array.isArray(raw))return[];
-  return raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&Object.hasOwn(EXTRA_KINDS,v.kind)&&(v.kind!=='image'||isImageSrc(v.src))).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(1600,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(920,v.h)):80,...(v.kind==='image'?{src:v.src}:{}),...(v.kind==='icon'?{icon:Object.hasOwn(ICONS,v.icon)?v.icon:'star'}:{}),...(v.kind==='text'&&isBind(v.bind)?{bind:v.bind}:{})}));
+  return raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&Object.hasOwn(EXTRA_KINDS,v.kind)&&(v.kind!=='image'||isImageSrc(v.src))).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(3200,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(3200,v.h)):80,...(v.kind==='image'?{src:v.src}:{}),...(v.kind==='icon'?{icon:Object.hasOwn(ICONS,v.icon)?v.icon:'star'}:{}),...(v.kind==='text'&&isBind(v.bind)?{bind:v.bind}:{}),...(v.kind==='image'&&Number.isFinite(v.nw)&&Number.isFinite(v.nh)&&v.nw>0&&v.nh>0?{nw:Math.min(20000,Math.round(v.nw)),nh:Math.min(20000,Math.round(v.nh))}:{})}));
 }
 const escapeText=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!));
 const n2=(n:number)=>Math.round(n*100)/100;
