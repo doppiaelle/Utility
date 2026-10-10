@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {applyEdits,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
+import {applyEdits,blankEdits,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
 const {window}=new JSDOM();globalThis.DOMParser=window.DOMParser;globalThis.XMLSerializer=window.XMLSerializer;
 const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml');
 const source='<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-live-id="area"><rect width="100" height="50" rx="4" fill="#fff" stroke="#111"/><text>A</text><g data-live-id="title"><text fill="#222">B</text></g></g><g data-live-id="slot"><path fill="#fff"/></g><path id="overlay"/></svg>';
@@ -35,4 +35,17 @@ test('a free element survives edits applied to it like any other block',()=>{
  const [one]=normalizeExtras([{id:'custom-a',kind:'ellipse',x:0,y:0,w:100,h:50}]);
  const doc=parse(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras([one])}</svg>`,{'custom-a':{fill:'#102030',x:15,sx:2}}));
  const g=doc.querySelector('[data-live-id=custom-a]');assert.equal(g.querySelector('ellipse').getAttribute('fill'),'#102030');assert.match(g.getAttribute('transform'),/translate\(15 0\)/);
+});
+
+test('templates drop anything malformed and re-validate their contents',()=>{
+ const list=normalizeTemplates([
+  {id:'tpl-a',name:'  Base  ',kind:'card',liveEdits:{title:{x:5,fill:'url(x)'}},extras:[{id:'custom-1',kind:'ellipse',x:1,y:2,w:30,h:40},{id:'custom-2',kind:'nope'}]},
+  {id:'tpl-a',name:'dup',kind:'card'},{id:'bad id',name:'x',kind:'card'},{id:'tpl-b',name:'',kind:'card'},{id:'tpl-c',name:'x',kind:'other'},{id:'tpl-d',name:'Mat',kind:'terrain'},null,7]);
+ assert.deepEqual(list.map(t=>[t.id,t.name,t.kind]),[['tpl-a','Base','card'],['tpl-d','Mat','terrain']]);
+ assert.deepEqual(list[0].liveEdits,{title:{x:5}});assert.deepEqual(list[0].extras.map(v=>v.id),['custom-1']);
+ assert.deepEqual(normalizeTemplates(list,'terrain').map(t=>t.id),['tpl-d']);assert.deepEqual(normalizeTemplates('x'),[]);
+});
+test('blank canvas hides built-in blocks, keeps their other edits and ignores free elements',()=>{
+ const edits=blankEdits(['title','cost','custom-9'],{title:{x:3,fill:'#112233'},'custom-9':{x:4}});
+ assert.deepEqual(edits,{title:{x:3,fill:'#112233',hidden:true},cost:{hidden:true}});
 });
