@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mapTcgCard,disciplineColor} from '../src/importCards.ts';
+import {mapTcgCard,disciplineColor,cleanRules,rulesText} from '../src/importCards.ts';
 
 const fighter={categoria:'Combattente',nome:'Cavaliere di Prova',id:'CMB-prova',disciplina:'Economia',costo:3,atk:2,res:4,prf:1,personalita:['Ambizioso','Creativo'],velocita:'Rapido',effetto:'Fa una cosa.',lore:'Una riga.\nSeconda.',rarita:'Rara',copie:3,art_prompt:'Un cavaliere in armatura.',parole_chiave:['Veloce']};
 
@@ -25,8 +25,8 @@ test('every category maps to its own values, chips and effect label',()=>{
  assert.deepEqual([place.type,place.stats.map(s=>s.kind+s.value),place.meta.map(m=>m.value)],['location',['RES6'],['Continuo']]);
  assert.deepEqual(mapTcgCard({categoria:'Luogo',nome:'Vuoto'}).card.effects,[]);
 });
-test('rarities outside the editor list are mapped with a warning, never silently',()=>{
- const legendary=mapTcgCard({categoria:'Azione',nome:'A',rarita:'Leggendaria'});assert.equal(legendary.card.rarity,'ultra');assert.match(legendary.warnings[0],/Leggendaria/);
+test('Leggendaria is a rarity of its own; unknown ones are mapped with a warning, never silently',()=>{
+ const legendary=mapTcgCard({categoria:'Azione',nome:'A',rarita:'Leggendaria'});assert.equal(legendary.card.rarity,'legendary');assert.equal(legendary.warnings.length,0);
  const odd=mapTcgCard({categoria:'Azione',nome:'A',rarita:'Mitica'});assert.equal(odd.card.rarity,'common');assert.equal(odd.warnings.length,1);
  for(const [name,key] of [['Comune','common'],['Rare','rare'],['Super Rara','super'],['ultra rare','ultra']])assert.equal(mapTcgCard({categoria:'Azione',nome:'A',rarita:name}).card.rarity,key);
 });
@@ -39,4 +39,18 @@ test('bad files are refused with a reason; ids and copies are made safe',()=>{
 test('disciplines get stable colours, including ones the importer has never seen',()=>{
  assert.equal(disciplineColor('Chimica'),disciplineColor(' chimica '));assert.match(disciplineColor('Chimica'),/^#[0-9a-f]{6}$/i);
  assert.notEqual(disciplineColor('Medicina'),disciplineColor('Economia'));
+});
+test('the structured rules are kept, limited and readable',()=>{
+ const r=mapTcgCard({categoria:'Combattente',nome:'A',innesco:{quando:'entra',azione:'pesca',quantita:1},attivata:{costo_mana:1,una_volta_per_turno:true,effetto:{azione:'cerca',carte:['AZI-x','CMB-y']}},continuo:null,effetto_azione:{},extra:{boh:1}}).card.rules;
+ assert.deepEqual(Object.keys(r).sort(),['attivata','innesco']);assert.deepEqual(r.innesco,{quando:'entra',azione:'pesca',quantita:1});
+ const lines=rulesText(r);assert.deepEqual(lines.map(l=>l.label),['Innesco','Abilità attivata']);
+ assert.equal(lines[0].text,'quando: entra · azione: pesca · quantita: 1');assert.equal(lines[1].text,'costo mana: 1 · una volta per turno: sì · effetto: (azione: cerca · carte: AZI-x, CMB-y)');
+ assert.deepEqual(rulesText(undefined),[]);assert.deepEqual(rulesText({}),[]);
+});
+test('rules from untrusted files cannot grow without bound or carry odd keys',()=>{
+ const deep={a:{b:{c:{d:{e:{f:1}}}}}},big=Object.fromEntries(Array.from({length:40},(_,i)=>['k'+i,'x'.repeat(500)]));
+ const r=cleanRules({innesco:{...deep,'bad key"':1,long:'y'.repeat(900)},attivata:big,continuo:'testo',effetto_azione:[1]});
+ assert.equal(JSON.stringify(r.innesco).includes('bad key'),false);assert.ok(r.innesco.long.length<=200);assert.equal(Object.keys(r.attivata).length,20);
+ assert.equal(JSON.stringify(r.innesco.a).includes('"f"'),false,'depth is limited');assert.equal('continuo' in r,false);assert.equal('effetto_azione' in r,false);
+ for(const bad of [null,'x',[],7])assert.deepEqual(cleanRules(bad),{});
 });
