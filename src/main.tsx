@@ -13,6 +13,7 @@ import type {BackDesign,BackLayoutId} from './back';
 import {mix} from './color';
 import {ART_STYLES,pickStyle,placeholderDataUrl} from './placeholder';
 import type {ArtStyle} from './placeholder';
+import {auditCards} from './audit';
 import {PrintDialog} from './PrintDialog';
 import type {CardPrint} from './PrintDialog';
 import {cardSheetPdf,rasterizeJpeg} from './printPdf';
@@ -544,6 +545,14 @@ function App(){
   const inCollection=editorMode==='collection';
   const collectionItems=useMemo<CollectionCard[]>(()=>inCollection?store.cards.map(c=>({id:c.id,name:c.name,typeLabel:TYPES[c.type]??'',scope:c.scope,scopeColor:c.scopeColor,rarity:c.rarity??'common',rarityLabel:RARITIES[c.rarity??'common']??'',copies:c.copies??1,thumb:asImage(c),hasArt:!!c.art})):[],[inCollection,store.cards]);
   const overview=useMemo(()=>inCollection?{thumb:asImage(card),back:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(backMarkup),saved:store.cards.some(c=>c.id===card.id&&JSON.stringify(normalizeCard(c))===JSON.stringify(normalizeCard(card))),terrain:terrainPreview(),templates:(()=>{try{return normalizeTemplates(JSON.parse(localStorage.getItem('kritoma.templates')||'[]')).length}catch{return 0}})()}:null,[inCollection,card,store.cards,backMarkup]);
+  const auditPrint=(o:CardPrint)=>{
+    const list:{name:string;markup:string}[]=[];
+    if(o.content==='deck'&&deckPrint)for(const id of [...deckPrint.cards.map(c=>c.id),...deckPrint.extra,...deckPrint.goals]){const c=store.cards.find(x=>x.id===id);if(c)list.push({name:c.name,markup:svg(normalizeCard(c))});}
+    else if(o.content==='current')list.push({name:card.name,markup});
+    else for(const c of store.cards)list.push({name:c.name,markup:svg(normalizeCard(c))});
+    if(o.back==='duplex')list.push({name:'Retro delle carte',markup:backMarkup});
+    return auditCards(list);
+  };
   const printCards=async(o:CardPrint)=>{
     const backImage=o.back==='duplex'?await rasterizeJpeg(backMarkup,945,1320):undefined;
     if(o.content==='deck'&&deckPrint){
@@ -588,7 +597,7 @@ function App(){
       onPlaceholders={()=>{const missing=store.cards.filter(c=>!c.art);if(!missing.length)return 0;const ids=new Set(missing.map(c=>c.id));return persist(store.cards.map(c=>ids.has(c.id)?{...c,art:placeholderDataUrl(c.id,c.scopeColor,pickStyle(c.id))}:c))?missing.length:0;}}
       onDecks={next=>{try{localStorage.setItem(DECK_KEY,JSON.stringify(next));setDecks(next);}catch{window.alert('Spazio del browser esaurito: le modifiche ai mazzi non sono state salvate.');}}}
       onPrintDeck={setDeckPrint} onCard={()=>setEditorMode('card')} onTerrain={()=>setEditorMode('terrain')}/>
-      {deckPrint&&deckInfo&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={0} deck={{name:deckPrint.name,distinct:deckInfo.distinct+deckInfo.extra+deckInfo.goals-deckInfo.missing.length,mainCopies:deckPrint.cards.filter(c=>known.has(c.id)).reduce((n,c)=>n+c.copies,0),extraCount:[...deckPrint.extra,...deckPrint.goals].filter(id=>known.has(id)).length,skipped:deckInfo.missing.length}} onClose={()=>setDeckPrint(null)} onPrint={async o=>{await printCards(o);}}/>}</>;
+      {deckPrint&&deckInfo&&<PrintDialog kind="card" audit={auditPrint} savedCount={store.cards.length} savedCopies={0} deck={{name:deckPrint.name,distinct:deckInfo.distinct+deckInfo.extra+deckInfo.goals-deckInfo.missing.length,mainCopies:deckPrint.cards.filter(c=>known.has(c.id)).reduce((n,c)=>n+c.copies,0),extraCount:[...deckPrint.extra,...deckPrint.goals].filter(id=>known.has(id)).length,skipped:deckInfo.missing.length}} onClose={()=>setDeckPrint(null)} onPrint={async o=>{await printCards(o);}}/>}</>;
   }
 
   return <div className="appShell">
@@ -608,7 +617,7 @@ function App(){
       if(id.startsWith('rarity-'))return <label>Finitura della carta<select value={rarity} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>;
       return <small>Modifica l’aspetto con i controlli sotto. Aggiungi o rimuovi testi nelle impostazioni avanzate.</small>;
     }}</LiveEditor>:<main className="workspace"><div className="previewWrap"><div ref={previewRef} className={`interactiveCard rarity-${rarity}${tilt.active?' isActive':''}${foilPreview?'':' isDisabled'}`} style={previewStyle} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={resetTilt} onPointerLeave={handlePointerLeave} aria-label="Anteprima carta interattiva: muovi il mouse o trascina con il dito per simulare i riflessi"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/>{foilPreview&&<div className="foilPreviewLayers" aria-hidden="true"><div className="foilHolo"/><div className="foilSparkle"/><div className="foilGlare"/></div>}</div></div></main>}
-    <nav className="bottomDock"><button onClick={save}>Salva</button>{side==='front'&&<button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button>}<button onClick={exportPng}>PNG</button><button onClick={()=>setPrintOpen(true)}>PDF</button></nav>{printOpen&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={store.cards.reduce((n,c)=>n+(c.copies??1),0)} onClose={()=>setPrintOpen(false)} onPrint={printCards}/>}
+    <nav className="bottomDock"><button onClick={save}>Salva</button>{side==='front'&&<button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button>}<button onClick={exportPng}>PNG</button><button onClick={()=>setPrintOpen(true)}>PDF</button></nav>{printOpen&&<PrintDialog kind="card" audit={auditPrint} savedCount={store.cards.length} savedCopies={store.cards.reduce((n,c)=>n+(c.copies??1),0)} onClose={()=>setPrintOpen(false)} onPrint={printCards}/>}
 
     {settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni carta">
       <div className="sheetHandle"/>
