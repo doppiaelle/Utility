@@ -497,7 +497,7 @@ function App(){
   const printCards=async(o:CardPrint)=>{
     if(o.content==='deck'&&deckPrint){
       const parts:{image:string;copies:number}[]=[];
-      for(const [id,n] of [...deckPrint.cards.map(c=>[c.id,c.copies] as [string,number]),...deckPrint.extra.map(id=>[id,1] as [string,number]),...deckPrint.goals.map(id=>[id,1] as [string,number])]){const c=store.cards.find(x=>x.id===id);if(c)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:n});}
+      for(const [id,n] of [...deckPrint.cards.map(c=>[c.id,c.copies] as [string,number]),...deckPrint.extra.map(id=>[id,o.extraCopies] as [string,number]),...deckPrint.goals.map(id=>[id,o.extraCopies] as [string,number])]){const c=store.cards.find(x=>x.id===id);if(c)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:n});}
       cardSheetPdf(parts,{page:o.page,marks:o.marks}).save(`${deckPrint.id}-mazzo.pdf`);return;
     }
     if(o.mode==='single'){exportPdf();return;}
@@ -533,7 +533,7 @@ function App(){
       onImport={files=>importGame(files,{includeLore:true,open:false})}
       onDecks={next=>{try{localStorage.setItem(DECK_KEY,JSON.stringify(next));setDecks(next);}catch{window.alert('Spazio del browser esaurito: le modifiche ai mazzi non sono state salvate.');}}}
       onPrintDeck={setDeckPrint} onCard={()=>setEditorMode('card')} onTerrain={()=>setEditorMode('terrain')}/>
-      {deckPrint&&deckInfo&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={0} deck={{name:deckPrint.name,distinct:deckInfo.distinct+deckInfo.extra+deckInfo.goals-deckInfo.missing.length,copies:deckPrint.cards.filter(c=>known.has(c.id)).reduce((n,c)=>n+c.copies,0)+[...deckPrint.extra,...deckPrint.goals].filter(id=>known.has(id)).length,skipped:deckInfo.missing.length}} onClose={()=>setDeckPrint(null)} onPrint={async o=>{await printCards(o);}}/>}</>;
+      {deckPrint&&deckInfo&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={0} deck={{name:deckPrint.name,distinct:deckInfo.distinct+deckInfo.extra+deckInfo.goals-deckInfo.missing.length,mainCopies:deckPrint.cards.filter(c=>known.has(c.id)).reduce((n,c)=>n+c.copies,0),extraCount:[...deckPrint.extra,...deckPrint.goals].filter(id=>known.has(id)).length,skipped:deckInfo.missing.length}} onClose={()=>setDeckPrint(null)} onPrint={async o=>{await printCards(o);}}/>}</>;
   }
 
   return <div className="appShell">
