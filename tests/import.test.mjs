@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mapTcgCard,disciplineColor,cleanRules,rulesText} from '../src/importCards.ts';
+import {mapTcgCard,disciplineColor,cleanRules,rulesText,LONG_TEXT} from '../src/importCards.ts';
 
 const fighter={categoria:'Combattente',nome:'Cavaliere di Prova',id:'CMB-prova',disciplina:'Economia',costo:3,atk:2,res:4,prf:1,personalita:['Ambizioso','Creativo'],velocita:'Rapido',effetto:'Fa una cosa.',lore:'Una riga.\nSeconda.',rarita:'Rara',copie:3,art_prompt:'Un cavaliere in armatura.',parole_chiave:['Veloce']};
 
@@ -54,3 +54,12 @@ test('rules from untrusted files cannot grow without bound or carry odd keys',()
  assert.equal(JSON.stringify(r.innesco.a).includes('"f"'),false,'depth is limited');assert.equal('continuo' in r,false);assert.equal('effetto_azione' in r,false);
  for(const bad of [null,'x',[],7])assert.deepEqual(cleanRules(bad),{});
 });
+test('cards with a lot of text get the layout with the tall text box, short ones stay classic',()=>{
+ const make=(effetto,lore='')=>mapTcgCard({categoria:'Combattente',nome:'A',effetto,lore},{includeLore:true}).card;
+ assert.equal(make('Pesca 1 carta.','Una riga.').layout,'classic');
+ assert.equal(make('x'.repeat(LONG_TEXT-12),'').layout,'classic');
+ assert.equal(make('x'.repeat(LONG_TEXT),'y'.repeat(40)).layout,'textheavy');
+ assert.equal(mapTcgCard({categoria:'Combattente',nome:'A',effetto:'x'.repeat(LONG_TEXT),lore:'y'.repeat(40)}).card.layout,'textheavy'.replace('textheavy','textheavy'));
+ assert.equal(mapTcgCard({categoria:'Combattente',nome:'A',effetto:'x'.repeat(100),lore:'y'.repeat(60)},{includeLore:false}).card.layout,'classic','the lore only counts when it is shown');
+});
+
