@@ -145,3 +145,32 @@ test('a crafted draft cannot run script or break the preview',async({page})=>{
  await page.goto('./');await expect(page.locator('.liveArtwork svg')).toBeVisible();
  expect(await page.evaluate(()=>(window as unknown as {__pwned?:number}).__pwned)).toBeUndefined();expect(await page.locator('.liveArtwork [onload],.liveArtwork [onerror]').count()).toBe(0);
 });
+
+test('workspace fills the stage, zooms and pans, shows guides and sizes in mm',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const stage=page.locator('.liveStage'),canvas=page.locator('.liveCanvas');
+ const s=(await stage.boundingBox())!,c=(await canvas.boundingBox())!;
+ expect(Math.max(c.height/s.height,c.width/s.width)).toBeGreaterThan(.85);
+ await page.getByRole('button',{name:'Aumenta zoom',exact:true}).click();
+ expect((await canvas.boundingBox())!.width).toBeGreaterThan(c.width*1.4);
+ await page.getByRole('button',{name:'Adatta allo spazio',exact:true}).click();
+ expect(Math.abs((await canvas.boundingBox())!.width-c.width)).toBeLessThan(1);
+ await page.getByRole('button',{name:'Griglia',exact:true}).click();await expect(page.locator('.liveGridLine')).toHaveCount(1);
+ await page.getByRole('button',{name:'Zona sicura',exact:true}).click();await expect(page.locator('.liveSafe')).toHaveCount(1);
+ await page.reload();await expect(page.locator('.liveGridLine')).toHaveCount(1);await expect(page.locator('.liveSafe')).toHaveCount(1);
+ await choose(page,'title');
+ if(!isMobile)await expect(page.getByRole('status')).toContainText(/\d+(,\d)?×\d+(,\d)? mm · x /);
+ await page.getByRole('button',{name:'Anteprima pulita',exact:true}).click();await expect(page.locator('.liveOverlay')).toBeHidden();
+ await page.getByRole('button',{name:'Anteprima pulita',exact:true}).click();await expect(page.locator('.liveOverlay')).toBeVisible();
+ await page.getByRole('button',{name:'Griglia',exact:true}).click();await expect(page.locator('.liveGridLine')).toHaveCount(0);
+ if(!isMobile){
+  const box=(await canvas.boundingBox())!,cx=box.x+box.width/2,cy=box.y+box.height/2;
+  await page.mouse.move(cx,cy);await page.keyboard.down('Control');await page.mouse.wheel(0,-400);await page.keyboard.up('Control');
+  expect((await canvas.boundingBox())!.width).toBeGreaterThan(box.width*1.2);
+  await page.getByLabel('Zoom grafica',{exact:true}).selectOption('3');
+  const before=await stage.evaluate(e=>e.scrollLeft+e.scrollTop);
+  await page.mouse.move(cx,cy);await page.mouse.down({button:'middle'});await page.mouse.move(cx-80,cy-60,{steps:4});await page.mouse.up({button:'middle'});
+  expect(await stage.evaluate(e=>e.scrollLeft+e.scrollTop)).toBeGreaterThan(before+50);
+ }
+ expect(errors).toEqual([]);
+});
