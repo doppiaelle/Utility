@@ -189,3 +189,25 @@ test('inspector tabs keep properties, layers and templates one click apart',asyn
  await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.getByLabel('Nome del modello',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.locator('.liveInspector')).toHaveCount(0);expect(errors).toEqual([]);
 });
+
+async function testPng(page:Page,w=400,h=200){const b64=await page.evaluate(([w,h])=>{const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d')!;g.fillStyle='#c33';g.fillRect(0,0,w,h);g.fillStyle='#fff';g.fillRect(w/4,h/4,w/2,h/2);return c.toDataURL('image/png').split(',')[1];},[w,h]);return Buffer.from(b64,'base64');}
+test('pictures: insert, exact size in mm, ratio lock, print resolution, fit, drop and paste',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const png=await testPng(page);
+ await page.locator('input[type=file][accept*=png]').setInputFiles({name:'a.png',mimeType:'image/png',buffer:png});
+ const img=page.locator('.liveArtwork [data-live-id^=custom-] image');await expect(img).toHaveCount(1);await expect(img).toHaveAttribute('href',/^data:image\//);
+ const wmm=page.getByLabel('Larghezza (mm)',{exact:true}),hmm=page.getByLabel('Altezza (mm)',{exact:true});
+ await wmm.fill('40');await expect(hmm).toHaveValue('20');await expect(wmm).toHaveValue('40');
+ await expect(page.locator('.liveDpi')).toContainText('dpi');
+ await page.getByLabel('Mantieni proporzioni',{exact:true}).uncheck();await hmm.fill('50');await expect(wmm).toHaveValue('40');await expect(hmm).toHaveValue('50');
+ await page.getByLabel('Mantieni proporzioni',{exact:true}).check();
+ await page.getByRole('button',{name:'Adatta al foglio',exact:true}).click();await expect(wmm).toHaveValue('63');await expect(hmm).toHaveValue('31.5');
+ await page.getByRole('button',{name:'Riempi il foglio',exact:true}).click();await expect(hmm).toHaveValue('88');
+ await page.getByRole('button',{name:'A 300 dpi',exact:true}).click();await expect(page.locator('.liveDpi')).toContainText('300 dpi');
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();await expect(page.locator('.liveDpi')).toContainText('dpi');
+ if(!isMobile){
+  const dt=await page.evaluateHandle(async([b64])=>{const bin=atob(b64),bytes=Uint8Array.from(bin,c=>c.charCodeAt(0)),d=new DataTransfer();d.items.add(new File([bytes],'drop.png',{type:'image/png'}));return d;},[png.toString('base64')]);
+  await page.locator('.liveStage').dispatchEvent('drop',{dataTransfer:dt});await expect(page.locator('.liveArtwork [data-live-id^=custom-] image')).toHaveCount(2);
+ }
+ await page.reload();await expect(page.locator('.liveArtwork [data-live-id^=custom-] image').first()).toHaveAttribute('href',/^data:image\//);expect(errors).toEqual([]);
+});
