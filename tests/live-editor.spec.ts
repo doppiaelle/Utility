@@ -552,3 +552,15 @@ test('removing things is one obvious step: a Delete button, the Delete key, and 
  await page.getByRole('button',{name:'Ripristina',exact:true}).click();await expect(page.locator('[data-live-id=title]')).not.toHaveAttribute('display','none');
  expect(errors).toEqual([]);
 });
+test('the tools sit beside the artwork as icons with tips, never over it',async({page,isMobile})=>{
+ const left=page.getByRole('toolbar',{name:'Aggiungi elementi'}),right=page.getByRole('toolbar',{name:'Vista e azioni'});
+ await expect(left).toBeVisible();await expect(right).toBeVisible();await expect(page.locator('.liveToolbar')).toHaveCount(0);
+ for(const [name,tip] of [['+ Testo','Testo'],['+ Forma','Forma'],['+ Immagine','Immagine'],['Modelli','Modelli e backup'],['Griglia','Griglia da 5 mm (G)'],['Annulla','Annulla (Ctrl/Cmd Z)']])await expect(page.getByRole('button',{name,exact:true})).toHaveAttribute('data-tip',tip);
+ await expect(page.getByRole('button',{name:'Elimina l’elemento selezionato',exact:true})).toBeDisabled();
+ if(!isMobile){const c=(await page.locator('.liveCanvas').boundingBox())!,l=(await left.boundingBox())!,r=(await right.boundingBox())!;
+  expect(l.x+l.width).toBeLessThanOrEqual(c.x);expect(r.x).toBeGreaterThanOrEqual(c.x+c.width);expect(l.height).toBeLessThan((await page.locator('.liveStage').boundingBox())!.height);}
+ await page.getByRole('button',{name:'+ Forma',exact:true}).click();await expect(page.getByRole('button',{name:'Elimina l’elemento selezionato',exact:true})).toBeEnabled();
+ await page.getByRole('button',{name:'Blocca l’elemento selezionato',exact:true}).click();await expect(page.getByRole('button',{name:'Sblocca l’elemento selezionato',exact:true})).toHaveAttribute('aria-pressed','true');
+ await page.getByRole('button',{name:'Sblocca l’elemento selezionato',exact:true}).click();
+ await page.getByRole('button',{name:'Duplica l’elemento selezionato',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(2);
+});
