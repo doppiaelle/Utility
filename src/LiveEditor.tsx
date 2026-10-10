@@ -1,15 +1,45 @@
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {normalizeEdits} from './liveModel';
-import type {ElementEdit,LiveEdits} from './liveModel';
+import {EXTRA_KINDS,ICONS,isImageSrc,normalizeEdits} from './liveModel';
+import type {ElementEdit,ExtraElement,ExtraKind,LiveEdits} from './liveModel';
 import './live.css';
 
 type History={undo:()=>void;redo:()=>void;begin:()=>void;end:()=>void;canUndo:boolean;canRedo:boolean};
-type Props={markup:string;width:number;height:number;edits?:LiveEdits;onChange:(edits:LiveEdits)=>void;history:History;children:(id:string)=>React.ReactNode;onAdvanced:()=>void;onAdd:(kind:'text'|'shape')=>string;onDelete:(id:string)=>void};
+type Props={markup:string;width:number;height:number;edits?:LiveEdits;onChange:(edits:LiveEdits)=>void;history:History;children:(id:string)=>React.ReactNode;onAdvanced:()=>void;extras?:ExtraElement[];onExtras:(extras:ExtraElement[],edits:LiveEdits)=>void};
 type Box={x:number;y:number;w:number;h:number;matrix:string;handle?:number};
-export function LiveEditor({markup,width,height,edits:raw,onChange,history,children,onAdvanced,onAdd,onDelete}:Props){
-  const edits=normalizeEdits(raw),[selected,select]=useState(''),[zoom,setZoom]=useState(1),[snap,setSnap]=useState(true),[panel,setPanel]=useState(true),[box,setBox]=useState<Box|null>(null),[appearance,setAppearance]=useState<Record<string,string>>({}),[fitWidth,setFitWidth]=useState(400),[layers,setLayers]=useState<{id:string;label:string}[]>([]);
-  const stage=useRef<HTMLDivElement>(null),canvas=useRef<HTMLDivElement>(null),editor=useRef<HTMLDivElement>(null),gesture=useRef<{id:string;pointer:number;x:number;y:number;edit:ElementEdit;box:Box;mode:string;inverse:DOMMatrix;original?:ElementEdit}|null>(null),latest=useRef({edits,onChange,history});latest.current={edits,onChange,history};
-  const e=edits[selected]||{},locked=!!e.locked;
+type Rect={l:number;t:number;r:number;b:number};
+type Gesture={id:string;pointer:number;x:number;y:number;edit:ElementEdit;box:Box;mode:string;hx:number;hy:number;inverse:DOMMatrix;original?:ElementEdit;rect?:Rect;xs?:number[];ys?:number[];threshold:number};
+const HANDLES:[number,number][]=[[-1,-1],[1,-1],[-1,1],[1,1],[0,-1],[0,1],[-1,0],[1,0]];
+const SHAPE_KINDS:ExtraKind[]=['shape','ellipse','triangle','diamond','hexagon','star'];
+const scaleLimit=(n:number)=>Math.max(.1,Math.min(5,n));
+/** Nearest guide within reach of any edge of the moving block. */
+function nearest(edges:number[],lines:number[]|undefined,delta:number,threshold:number){
+  let best:{shift:number;line:number}|undefined,distance=threshold;
+  for(const line of lines??[])for(const edge of edges){const d=Math.abs(line-edge-delta);if(d<distance){distance=d;best={shift:line-edge,line};}}
+  return best;
+}
+/** Downscale uploads so drafts keep fitting in browser storage. */
+function readImage(file:File,done:(src:string,w:number,h:number)=>void,fail:()=>void){
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{URL.revokeObjectURL(url);if(!im.naturalWidth||!im.naturalHeight){fail();return;}
+    const k=Math.min(1,1200/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.naturalWidth*k));c.height=Math.max(1,Math.round(im.naturalHeight*k));c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);
+    let src=c.toDataURL('image/webp',.85);if(!src.startsWith('data:image/webp'))src=c.toDataURL('image/png');
+    if(isImageSrc(src))done(src,c.width,c.height);else fail();};
+  im.onerror=()=>{URL.revokeObjectURL(url);fail();};im.src=url;
+}
+export function LiveEditor({markup,width,height,edits:raw,onChange,history,children,onAdvanced,extras=[],onExtras}:Props){
+  const edits=normalizeEdits(raw),[selected,select]=useState(''),[zoom,setZoom]=useState(1),[snap,setSnap]=useState(true),[panel,setPanel]=useState(true),[box,setBox]=useState<Box|null>(null),[appearance,setAppearance]=useState<Record<string,string>>({}),[fitWidth,setFitWidth]=useState(400),[layers,setLayers]=useState<{id:string;label:string}[]>([]),[guides,setGuides]=useState<{x?:number;y?:number}|null>(null),[notice,setNotice]=useState('');
+  const stage=useRef<HTMLDivElement>(null),canvas=useRef<HTMLDivElement>(null),editor=useRef<HTMLDivElement>(null),file=useRef<HTMLInputElement>(null),fileTarget=useRef(''),gesture=useRef<Gesture|null>(null),latest=useRef({edits,onChange,history});latest.current={edits,onChange,history};
+  const e=edits[selected]||{},locked=!!e.locked,item=extras.find(v=>v.id===selected),full=extras.length>=100;
+  const setItem=(p:Partial<ExtraElement>)=>onExtras(extras.map(v=>v.id===selected?{...v,...p}:v),edits);
+  const add=(kind:ExtraKind,more:Partial<ExtraElement>={})=>{if(full)return;
+    const id=`custom-${crypto.randomUUID()}`,wide=kind==='text'||kind==='shape',w=more.w??(kind==='line'?200:wide?180:120),h=more.h??(kind==='line'?20:wide?80:120);
+    onExtras([...extras,{id,kind,text:kind==='text'?'Nuovo testo':'',x:Math.round(width/2-w/2),y:Math.round(height/2-h/2),w,h,...more}],edits);select(id);setPanel(true);};
+  const remove=()=>{const next={...edits};delete next[selected];onExtras(extras.filter(v=>v.id!==selected),next);select('');};
+  // The copy keeps the same geometry and pivot; only its offset differs.
+  const duplicate=()=>{if(!item||full)return;const id=`custom-${crypto.randomUUID()}`;onExtras([...extras,{...item,id}],{...edits,[id]:{...e,locked:false,x:(e.x??0)+20,y:(e.y??0)+20}});select(id);};
+  const pickImage=(target:string)=>{fileTarget.current=target;file.current?.click();};
+  const onFile=(ev:React.ChangeEvent<HTMLInputElement>)=>{const f=ev.target.files?.[0];ev.target.value='';if(!f)return;setNotice('');
+    readImage(f,(src,w,h)=>{const k=Math.min(1,width*.5/w,height*.5/h);if(fileTarget.current)setItem({src});else add('image',{src,w:Math.max(10,Math.round(w*k)),h:Math.max(10,Math.round(h*k))});},()=>setNotice('Immagine non leggibile o troppo pesante: prova con un file più piccolo.'));};
   const patch=(p:Partial<ElementEdit>)=>onChange({...edits,[selected]:{...e,...p,...(box?{cx:box.x+box.w/2,cy:box.y+box.h/2}:{})}});
   const measure=()=>{const svg=canvas.current?.querySelector('svg'),nodes=svg?.querySelectorAll<SVGGElement>('[data-live-id]');
     if(!svg||!nodes)return;setLayers(Array.from(nodes).map(n=>({id:n.dataset.liveId!,label:n.dataset.liveLabel!})));
@@ -19,42 +49,64 @@ export function LiveEditor({markup,width,height,edits:raw,onChange,history,child
   };
   useLayoutEffect(measure,[markup,selected,zoom]);
   useEffect(()=>{const resize=new ResizeObserver(()=>{const el=stage.current;if(el)setFitWidth(Math.max(100,Math.min(el.clientWidth-52,(el.clientHeight-90)*width/height)));measure();});if(stage.current)resize.observe(stage.current);return()=>resize.disconnect();},[selected,width,height,panel]);
-  const start=(ev:React.PointerEvent,mode='move')=>{
+  // Guides are measured in drawing units, so they apply only where the block's parent is not itself scaled or rotated.
+  const collectGuides=(g:Gesture,node:SVGGElement)=>{
+    const svg=canvas.current!.querySelector('svg')!,toRoot=svg.getScreenCTM()!.inverse(),rel=toRoot.multiply((node.parentElement as unknown as SVGGraphicsElement).getScreenCTM()!);
+    if(Math.abs(rel.a-1)>.001||Math.abs(rel.d-1)>.001||Math.abs(rel.b)>.001||Math.abs(rel.c)>.001)return;
+    const rect=(n:Element):Rect=>{const r=n.getBoundingClientRect(),a=new DOMPoint(r.left,r.top).matrixTransform(toRoot),b=new DOMPoint(r.right,r.bottom).matrixTransform(toRoot);return{l:a.x,t:a.y,r:b.x,b:b.y};};
+    g.rect=rect(node);g.xs=[0,width/2,width];g.ys=[0,height/2,height];g.threshold=6*toRoot.a;
+    svg.querySelectorAll<SVGGElement>('[data-live-id]').forEach(n=>{if(n===node||n.contains(node)||node.contains(n))return;const r=rect(n);if(r.r-r.l<=0&&r.b-r.t<=0)return;g.xs!.push(r.l,(r.l+r.r)/2,r.r);g.ys!.push(r.t,(r.t+r.b)/2,r.b);});
+  };
+  const start=(ev:React.PointerEvent,mode='move',hx=0,hy=0)=>{
     if(ev.button!==0)return;
     const target=(ev.target as Element).closest('[data-live-id]') as SVGGElement|null,id=mode==='move'?target?.dataset.liveId:selected;
     if(!id){select('');return;}select(id);setPanel(true);
     const node=Array.from(canvas.current!.querySelectorAll<SVGGElement>('[data-live-id]')).find(n=>n.dataset.liveId===id);
     if(!node||edits[id]?.locked)return;
-    const b=node.getBBox(),inverse=(node.parentElement as unknown as SVGGraphicsElement).getScreenCTM()!.inverse(),p=new DOMPoint(ev.clientX,ev.clientY).matrixTransform(inverse);gesture.current={id,pointer:ev.pointerId,x:p.x,y:p.y,edit:{...edits[id],cx:b.x+b.width/2,cy:b.y+b.height/2},box:{x:b.x,y:b.y,w:b.width,h:b.height,matrix:''},mode,inverse,original:edits[id]};
+    const b=node.getBBox(),inverse=(node.parentElement as unknown as SVGGraphicsElement).getScreenCTM()!.inverse(),p=new DOMPoint(ev.clientX,ev.clientY).matrixTransform(inverse);gesture.current={id,pointer:ev.pointerId,x:p.x,y:p.y,edit:{...edits[id],cx:b.x+b.width/2,cy:b.y+b.height/2},box:{x:b.x,y:b.y,w:b.width,h:b.height,matrix:''},mode,hx,hy,inverse,original:edits[id],threshold:0};
+    if(mode==='move'&&snap)collectGuides(gesture.current,node);
     history.begin();ev.currentTarget.setPointerCapture(ev.pointerId);ev.preventDefault();
   };
   const move=(ev:React.PointerEvent)=>{const g=gesture.current;if(!g||g.pointer!==ev.pointerId)return;const p=new DOMPoint(ev.clientX,ev.clientY).matrixTransform(g.inverse),dx=p.x-g.x,dy=p.y-g.y,base=g.edit;
     const round=(n:number)=>snap?Math.round(n/5)*5:n;let change:ElementEdit;
-    if(g.mode==='resize'){const angle=(base.rotation??0)*Math.PI/180,localX=dx*Math.cos(angle)+dy*Math.sin(angle),localY=-dx*Math.sin(angle)+dy*Math.cos(angle);let sx=Math.max(.1,Math.min(5,(base.sx??1)+localX*2/Math.max(1,g.box.w))),sy=Math.max(.1,Math.min(5,(base.sy??1)+localY*2/Math.max(1,g.box.h)));if(ev.shiftKey)sy=sx;change={sx,sy};}
-    else if(g.mode==='rotate'){const cx=(base.cx??0)+(base.x??0),cy=(base.cy??0)+(base.y??0),angle=(Math.atan2(p.y-cy,p.x-cx)-Math.atan2(g.y-cy,g.x-cx))*180/Math.PI+(base.rotation??0);change={rotation:Math.max(-180,Math.min(180,snap?Math.round(angle/15)*15:angle))};}
-    else change={x:round((base.x??0)+dx),y:round((base.y??0)+dy)};
+    if(g.mode==='resize'){
+      // The opposite side stays where it is: the pivot moves by half of the size change.
+      const angle=(base.rotation??0)*Math.PI/180,cos=Math.cos(angle),sin=Math.sin(angle),localX=dx*cos+dy*sin,localY=-dx*sin+dy*cos,w=Math.max(1,g.box.w),h=Math.max(1,g.box.h),sx0=base.sx??1,sy0=base.sy??1;
+      const sx=g.hx?scaleLimit(sx0+g.hx*localX/w):sx0;let sy=g.hy?scaleLimit(sy0+g.hy*localY/h):sy0;if(ev.shiftKey&&g.hx&&g.hy)sy=scaleLimit(sy0*sx/sx0);
+      const lx=g.hx*(sx-sx0)*w/2,ly=g.hy*(sy-sy0)*h/2;change={sx,sy,x:(base.x??0)+lx*cos-ly*sin,y:(base.y??0)+lx*sin+ly*cos};}
+    else if(g.mode==='rotate'){const cx=(base.cx??0)+(base.x??0),cy=(base.cy??0)+(base.y??0),angle=(Math.atan2(p.y-cy,p.x-cx)-Math.atan2(g.y-cy,g.x-cx))*180/Math.PI+(base.rotation??0);const turned=snap?Math.round(angle/15)*15:angle;change={rotation:((turned+180)%360+360)%360-180};}
+    else{const r=g.rect,gx=r&&nearest([r.l,(r.l+r.r)/2,r.r],g.xs,dx,g.threshold),gy=r&&nearest([r.t,(r.t+r.b)/2,r.b],g.ys,dy,g.threshold);
+      change={x:gx?(base.x??0)+gx.shift:round((base.x??0)+dx),y:gy?(base.y??0)+gy.shift:round((base.y??0)+dy)};setGuides(gx||gy?{x:gx?.line,y:gy?.line}:null);}
     const current=latest.current;current.onChange({...current.edits,[g.id]:{...base,...change}});
   };
-  const finish=(ev:React.PointerEvent,cancel=false)=>{const g=gesture.current;if(!g||g.pointer!==ev.pointerId)return;if(cancel){const next={...latest.current.edits};if(g.original)next[g.id]=g.original;else delete next[g.id];latest.current.onChange(next);}gesture.current=null;history.end();};
+  const finish=(ev:React.PointerEvent,cancel=false)=>{const g=gesture.current;if(!g||g.pointer!==ev.pointerId)return;if(cancel){const next={...latest.current.edits};if(g.original)next[g.id]=g.original;else delete next[g.id];latest.current.onChange(next);}gesture.current=null;setGuides(null);history.end();};
   useEffect(()=>{const key=(ev:KeyboardEvent)=>{if(!editor.current?.contains(document.activeElement)||/INPUT|TEXTAREA|SELECT/.test((ev.target as Element).tagName))return;
     const h=latest.current.history;if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='z'){ev.preventDefault();ev.shiftKey?h.redo():h.undo();return;}
     if(ev.key==='Escape'){select('');return;}if(!selected||locked)return;
+    if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='d'&&item){ev.preventDefault();duplicate();return;}
     const delta=ev.shiftKey?10:1;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)){ev.preventDefault();patch({x:(e.x??0)+(ev.key==='ArrowRight'?delta:ev.key==='ArrowLeft'?-delta:0),y:(e.y??0)+(ev.key==='ArrowDown'?delta:ev.key==='ArrowUp'?-delta:0)});}
-    if(ev.key==='Delete'||ev.key==='Backspace'){ev.preventDefault();patch({hidden:true});}
-  };window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[selected,e,box,locked]);
+    if(ev.key==='Delete'||ev.key==='Backspace'){ev.preventDefault();item?remove():patch({hidden:true});}
+  };window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[selected,e,box,locked,extras]);
+  const align=(axis:'x'|'y',pos:number)=>{if(!box)return;const size=axis==='x'?box.w*(e.sx??1):box.h*(e.sy??1),mid=axis==='x'?box.x+box.w/2:box.y+box.h/2,total=axis==='x'?width:height;patch({[axis]:size/2+(total-size)*pos-mid});};
+  const hs=box?.handle??10;
   const number=(label:string,key:keyof ElementEdit,value:number,min:number,max:number,step=1)=><label>{label}<input type="number" value={Number(value.toFixed(2))} min={min} max={max} step={step} disabled={locked} onChange={ev=>{if(ev.target.value!==''&&Number.isFinite(ev.target.valueAsNumber))patch({[key]:Math.max(min,Math.min(max,ev.target.valueAsNumber))});}}/></label>;
   const color=(label:string,key:keyof ElementEdit,fallback:string)=><label>{label}<input type="color" value={String(e[key]??(/^#[0-9a-f]{6}$/i.test(appearance[key]||'')?appearance[key]:fallback))} disabled={locked} onChange={ev=>patch({[key]:ev.target.value})}/></label>;
   return <div className="liveEditor" ref={editor}>
-    <div className="liveToolbar" role="toolbar" aria-label="Strumenti di modifica"><b>Modifica sulla grafica</b><button onClick={history.undo} disabled={!history.canUndo} aria-label="Annulla">↶</button><button onClick={history.redo} disabled={!history.canRedo} aria-label="Ripeti">↷</button><label className="liveZoom">Zoom<select aria-label="Zoom grafica" value={zoom} onChange={ev=>setZoom(Number(ev.target.value))}>{[.5,.75,1,1.5,2,3].map(z=><option key={z} value={z}>{z===1?'Adatta':`${z*100}%`}</option>)}</select></label><label className="liveSnap"><input type="checkbox" checked={snap} onChange={ev=>setSnap(ev.target.checked)}/>Allinea</label><button onClick={()=>setPanel(v=>!v)} aria-expanded={panel}>Elementi</button><button onClick={()=>{select(onAdd('text'));setPanel(true);}}>+ Testo</button><button onClick={()=>{select(onAdd('shape'));setPanel(true);}}>+ Forma</button><button onClick={onAdvanced}>Avanzate</button></div>
+    <div className="liveToolbar" role="toolbar" aria-label="Strumenti di modifica"><b>Modifica sulla grafica</b><button onClick={history.undo} disabled={!history.canUndo} aria-label="Annulla">↶</button><button onClick={history.redo} disabled={!history.canRedo} aria-label="Ripeti">↷</button><label className="liveZoom">Zoom<select aria-label="Zoom grafica" value={zoom} onChange={ev=>setZoom(Number(ev.target.value))}>{[.5,.75,1,1.5,2,3].map(z=><option key={z} value={z}>{z===1?'Adatta':`${z*100}%`}</option>)}</select></label><label className="liveSnap"><input type="checkbox" checked={snap} onChange={ev=>setSnap(ev.target.checked)}/>Allinea</label><button onClick={()=>setPanel(v=>!v)} aria-expanded={panel}>Elementi</button><button disabled={full} onClick={()=>add('text')}>+ Testo</button><button disabled={full} onClick={()=>add('shape')}>+ Forma</button><select className="liveAdd" aria-label="Aggiungi un altro elemento" disabled={full} value="" onChange={ev=>{const kind=ev.target.value as ExtraKind;if(kind==='image')pickImage('');else if(kind)add(kind,kind==='icon'?{icon:'star'}:{});}}><option value="">+ Altro…</option>{(['ellipse','line','triangle','diamond','hexagon','star','image','icon'] as ExtraKind[]).map(k=><option key={k} value={k}>{EXTRA_KINDS[k]}</option>)}</select><input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile}/><button onClick={onAdvanced}>Avanzate</button></div>
+    {notice&&<p className="liveNotice" role="alert">{notice}</p>}
     <div className="liveBody"><div className="liveStage" ref={stage} tabIndex={0} aria-label="Area di modifica: seleziona un elemento e usa le frecce per spostarlo">
       <p className="liveHint">Tocca un blocco per modificarlo · trascina per spostarlo · usa le maniglie per dimensione e rotazione</p>
       <div className="liveCanvas" ref={canvas} style={{width:`${fitWidth*zoom}px`,maxWidth:'none',aspectRatio:`${width}/${height}`}} onPointerDown={start} onPointerMove={move} onPointerUp={ev=>finish(ev)} onPointerCancel={ev=>finish(ev,true)} onLostPointerCapture={ev=>finish(ev,true)} onDoubleClick={()=>editor.current?.querySelector<HTMLTextAreaElement>('.liveContent textarea')?.focus()}>
         <div className="liveArtwork" dangerouslySetInnerHTML={{__html:markup}}/>
-        <svg className="liveOverlay" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">{box&&!e.hidden&&<g transform={box.matrix}><rect className="liveSelection" x={box.x} y={box.y} width={box.w} height={box.h}/>{!locked&&<><rect className="liveHandle" data-live-handle="resize" x={box.x+box.w-(box.handle??9)} y={box.y+box.h-(box.handle??9)} width={(box.handle??9)*2} height={(box.handle??9)*2} onPointerDown={ev=>{ev.stopPropagation();start(ev,'resize');}}/><line className="liveSelection" x1={box.x+box.w/2} x2={box.x+box.w/2} y1={box.y} y2={box.y-(box.handle??10)*3}/><circle className="liveHandle" data-live-handle="rotate" cx={box.x+box.w/2} cy={box.y-(box.handle??10)*3} r={box.handle??10} onPointerDown={ev=>{ev.stopPropagation();start(ev,'rotate');}}/></>}</g>}</svg>
+        <svg className="liveOverlay" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">{box&&!e.hidden&&<g transform={box.matrix}><rect className="liveSelection" x={box.x} y={box.y} width={box.w} height={box.h}/>{!locked&&<>{HANDLES.filter(([hx,hy])=>hx&&hy?(hx===1&&hy===1)||(box.w>hs*6&&box.h>hs*4):hx?box.w>hs*5&&(hx===-1||box.h>hs*7):box.w>hs*7&&box.h>hs*5).map(([hx,hy])=>{const s=hx&&hy?hs:hs*.6;return <rect key={`${hx},${hy}`} className="liveHandle" data-live-handle={hx===1&&hy===1?'resize':`resize-${hx}-${hy}`} data-dir={hx&&hy?(hx===hy?'nwse':'nesw'):hx?'ew':'ns'} x={box.x+box.w*(hx+1)/2-s} y={box.y+box.h*(hy+1)/2-s} width={s*2} height={s*2} onPointerDown={ev=>{ev.stopPropagation();start(ev,'resize',hx,hy);}}/>;})}<line className="liveSelection" x1={box.x+box.w/2} x2={box.x+box.w/2} y1={box.y} y2={box.y-hs*3}/><circle className="liveHandle" data-live-handle="rotate" cx={box.x+box.w/2} cy={box.y-hs*3} r={hs} onPointerDown={ev=>{ev.stopPropagation();start(ev,'rotate');}}/></>}</g>}{guides?.x!==undefined&&<line className="liveGuide" x1={guides.x} x2={guides.x} y1={0} y2={height}/>}{guides?.y!==undefined&&<line className="liveGuide" x1={0} x2={width} y1={guides.y} y2={guides.y}/>}</svg>
       </div>
     </div>{panel&&<aside className="liveInspector" aria-label="Elemento selezionato"><label>Seleziona un elemento<select aria-label="Seleziona un elemento" value={selected} onChange={ev=>select(ev.target.value)}><option value="">Scegli dalla grafica o dall’elenco</option>{layers.map(l=><option key={l.id} value={l.id}>{l.label}{edits[l.id]?.hidden?' · nascosto':''}{edits[l.id]?.locked?' · bloccato':''}</option>)}</select></label>
-      {selected?<><header><strong>{layers.find(l=>l.id===selected)?.label}</strong><button aria-label="Deseleziona" onClick={()=>select('')}>×</button></header><div className="liveActions"><button onClick={()=>patch({locked:!locked})}>{locked?'Sblocca':'Blocca'}</button><button disabled={locked} onClick={()=>patch({hidden:!e.hidden})}>{e.hidden?'Mostra':'Nascondi'}</button><button disabled={locked} onClick={()=>{const next={...edits};delete next[selected];onChange(next);}}>Ripristina</button></div>{selected.startsWith('custom-')&&<button disabled={locked} onClick={()=>{onDelete(selected);select('');}}>Elimina elemento aggiunto</button>}<fieldset disabled={locked} className="liveContent">{children(selected)}</fieldset>
-      <details open><summary>Posizione e dimensione</summary><div className="liveGrid">{number('Sposta a destra / sinistra','x',e.x??0,-3200,3200)}{number('Sposta in alto / basso','y',e.y??0,-3200,3200)}{number('Larghezza (×)','sx',e.sx??1,.1,5,.05)}{number('Altezza (×)','sy',e.sy??1,.1,5,.05)}{number('Rotazione (°)','rotation',e.rotation??0,-180,180)}{number('Opacità (0–1)','opacity',e.opacity??1,0,1,.05)}</div><div className="liveActions"><button disabled={locked} onClick={()=>patch({x:width/2-(box?.x??0)-(box?.w??0)/2})}>Centra ↔</button><button disabled={locked} onClick={()=>patch({y:height/2-(box?.y??0)-(box?.h??0)/2})}>Centra ↕</button></div></details>
+      {selected?<><header><strong>{layers.find(l=>l.id===selected)?.label}</strong><button aria-label="Deseleziona" onClick={()=>select('')}>×</button></header><div className="liveActions"><button onClick={()=>patch({locked:!locked})}>{locked?'Sblocca':'Blocca'}</button><button disabled={locked} onClick={()=>patch({hidden:!e.hidden})}>{e.hidden?'Mostra':'Nascondi'}</button><button disabled={locked} onClick={()=>{const next={...edits};delete next[selected];onChange(next);}}>Ripristina</button></div>{item&&<div className="liveActions"><button disabled={locked||full} onClick={duplicate}>Duplica</button><button disabled={locked} onClick={remove}>Elimina elemento aggiunto</button></div>}<fieldset disabled={locked} className="liveContent">{!item?children(selected):<>
+        {item.kind==='text'&&<label>Testo libero<textarea aria-label="Testo libero" value={item.text} onChange={ev=>setItem({text:ev.target.value})}/></label>}
+        {SHAPE_KINDS.includes(item.kind)&&<label>Forma<select aria-label="Forma" value={item.kind} onChange={ev=>setItem({kind:ev.target.value as ExtraKind})}>{SHAPE_KINDS.map(k=><option key={k} value={k}>{EXTRA_KINDS[k]}</option>)}</select></label>}
+        {item.kind==='icon'&&<label>Icona<select aria-label="Icona" value={item.icon} onChange={ev=>setItem({icon:ev.target.value})}>{Object.entries(ICONS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>}
+        {item.kind==='image'&&<button type="button" onClick={()=>pickImage(item.id)}>Sostituisci immagine</button>}</>}</fieldset>
+      <details open><summary>Posizione e dimensione</summary><div className="liveGrid">{number('Sposta a destra / sinistra','x',e.x??0,-3200,3200)}{number('Sposta in alto / basso','y',e.y??0,-3200,3200)}{number('Larghezza (×)','sx',e.sx??1,.1,5,.05)}{number('Altezza (×)','sy',e.sy??1,.1,5,.05)}{number('Rotazione (°)','rotation',e.rotation??0,-180,180)}{number('Opacità (0–1)','opacity',e.opacity??1,0,1,.05)}</div><div className="liveActions liveAlign" role="group" aria-label="Allinea al foglio">{([['x',0,'⇤','Allinea a sinistra'],['x',.5,'↔','Centra in orizzontale'],['x',1,'⇥','Allinea a destra'],['y',0,'⤒','Allinea in alto'],['y',.5,'↕','Centra in verticale'],['y',1,'⤓','Allinea in basso']] as ['x'|'y',number,string,string][]).map(([axis,pos,glyph,label])=><button key={label} disabled={locked||!box} aria-label={label} title={label} onClick={()=>align(axis,pos)}>{glyph}</button>)}</div></details>
       {(appearance.hasShape==='true'||appearance.hasBorder==='true')&&<details><summary>Colori e bordi</summary><div className="liveGrid">{appearance.hasShape==='true'&&color('Fondo','fill','#18232b')}{appearance.hasBorder==='true'&&color('Bordo','stroke','#eee6da')}{appearance.hasBorder==='true'&&number('Spessore bordo','strokeWidth',e.strokeWidth??Number(appearance.strokeWidth),0,20,.5)}{appearance.hasRadius==='true'&&number('Angoli arrotondati','radius',e.radius??Number(appearance.radius),0,100)}</div></details>}
       {appearance.hasText==='true'&&<details><summary>Stile del testo</summary><div className="liveGrid">{color('Colore testo','textColor','#213749')}{number('Grandezza testo','fontSize',e.fontSize??Number(appearance.fontSize),8,80)}{number('Spessore testo','fontWeight',e.fontWeight??Number(appearance.fontWeight),300,900,100)}{number('Spazio tra lettere','letterSpacing',e.letterSpacing??Number(appearance.letterSpacing),-2,12,.5)}</div><label>Carattere<select disabled={locked} value={e.fontFamily??'Arial'} onChange={ev=>patch({fontFamily:ev.target.value})}>{['Arial','Inter','Trebuchet MS','Verdana','Georgia','Impact','Courier New'].map(f=><option key={f}>{f}</option>)}</select></label></details>}
       <details><summary>Ordine degli elementi</summary><div className="liveActions"><button disabled={locked} onClick={()=>patch({order:Math.max(0,...Object.values(edits).map(v=>v.order??0))+1})}>Porta davanti</button><button disabled={locked} onClick={()=>patch({order:Math.min(0,...Object.values(edits).map(v=>v.order??0))-1})}>Porta dietro</button></div><small>L’ordine cambia tra elementi dello stesso gruppo.</small></details></>:<p>Seleziona sulla grafica o nell’elenco. Anche gli elementi nascosti possono essere selezionati e riattivati.</p>}
