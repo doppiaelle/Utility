@@ -74,3 +74,9 @@ test('backups round-trip, drop invalid templates and refuse foreign or oversized
  for(const bad of['{','[]','{"format":"x"}','{"format":"kritoma-backup","version":2,"data":{}}','{"format":"kritoma-backup","version":1,"data":{}}','{"format":"kritoma-backup","version":1,"data":{"kritoma.cards":[1]}}','{"format":"kritoma-backup","version":1,"data":{"kritoma.cards":"x"}}'])assert.equal(parseBackup(bad).ok,false,bad);
  assert.equal(parseBackup('x'.repeat(40_000_001)).ok,false);
 });
+
+test('image boxes remember their pixel size, rejecting nonsense values',()=>{
+ const png='data:image/png;base64,iVBORw0KGgo=';
+ const [a,b,c]=normalizeExtras([{id:'custom-a',kind:'image',src:png,nw:1200.4,nh:800,x:0,y:0,w:10,h:10},{id:'custom-b',kind:'image',src:png,nw:-5,nh:Infinity,x:0,y:0,w:10,h:10},{id:'custom-c',kind:'ellipse',nw:10,nh:10,x:0,y:0,w:10,h:10}]);
+ assert.deepEqual([a.nw,a.nh],[1200,800]);assert.deepEqual([b.nw,b.nh],[undefined,undefined]);assert.equal('nw' in c,false);
+});
