@@ -1,7 +1,7 @@
 import React,{useEffect,useMemo,useState}from'react';
 import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras} from './liveModel';
-import {fieldData} from './liveModel';
+import {fieldData,safeSvg} from './liveModel';
 import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import jsPDF from'jspdf';
@@ -330,7 +330,7 @@ function terrainSvg(state:TerrainState){
   const groups=`${leftPanel?renderFour(state.topLeftGroup,leftPanel,'topLeftGroup'):''}${rightPanel?renderFour(state.topRightGroup,rightPanel,'topRightGroup'):''}${utilityAndCenter}`;
   const sheenRect=shell?.rect||base,sheenStyle=shell?.style;
   const sheenPath=shapePath(sheenStyle?.preset||'rounded',sheenRect.x,sheenRect.y,sheenRect.w,sheenRect.h,sheenStyle?.radius||28);
-  return applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs><filter id="terrainShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity=".42"/></filter><linearGradient id="terrainSheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".035"/><stop offset=".45" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient></defs>${editable('background','Superficie di fondo',`<rect width="${W}" height="${H}" fill="${state.backgroundColor}"/>`)}<g filter="url(#terrainShadow)">${onionMarkup}${panels}${groups}${state.sheenEnabled?`<path d="${sheenPath}" fill="url(#terrainSheen)" pointer-events="none"/>`:''}</g>${renderExtras(state.extras,fieldData(terrainFields(state)))}</svg>`,state.liveEdits);
+  return safeSvg(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs><filter id="terrainShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity=".42"/></filter><linearGradient id="terrainSheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".035"/><stop offset=".45" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient></defs>${editable('background','Superficie di fondo',`<rect width="${W}" height="${H}" fill="${state.backgroundColor}"/>`)}<g filter="url(#terrainShadow)">${onionMarkup}${panels}${groups}${state.sheenEnabled?`<path d="${sheenPath}" fill="url(#terrainSheen)" pointer-events="none"/>`:''}</g>${renderExtras(state.extras,fieldData(terrainFields(state)))}</svg>`,state.liveEdits));
 }
 
 function download(name:string,blob:Blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}

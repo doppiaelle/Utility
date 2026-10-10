@@ -19,6 +19,8 @@ Editor SVG per le sei tipologie di carte e per i terreni di gioco, con anteprima
 - Con l’area di modifica a fuoco: frecce per spostare (Shift = 10 unità), Canc per nascondere, Esc per deselezionare, Ctrl/Cmd+Z per annullare e Ctrl/Cmd+Shift+Z per ripetere.
 - “Avanzate” apre i parametri completi. “Anteprima” nella carta riattiva i riflessi foil interattivi.
 
+Backup: nel pannello “Modelli”, “Esporta progetto (JSON)” salva carte, bozza, terreno e modelli in un solo file; “Importa progetto” li ripristina (dopo conferma) e se lo spazio del browser non basta lascia intatti i dati precedenti. Il file importato è trattato come non fidato: i campi della carta vengono convalidati e l’SVG mostrato o esportato è ripulito da script, gestori `on…` e link `javascript:`.
+
 Le bozze si salvano automaticamente nel browser. “Salva” conserva la carta nella raccolta locale. I progetti precedenti mantengono l’aspetto di partenza: `liveEdits` ed `extras` sono campi aggiuntivi. La stessa grafica SVG alimenta tutte le esportazioni; contorni di selezione e maniglie restano esclusi. L’ordine si applica agli elementi dello stesso gruppo; le finiture fisse conservano la loro posizione. La dimensione del testo può essere regolata oltre l’adattamento automatico: verifica l’anteprima prima di stampare.
 
 ## Sviluppo e verifiche
@@ -35,4 +37,4 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-I test Playwright eseguono gli stessi flussi su desktop e su un dispositivo mobile con touch: selezione, trascinamento, ridimensionamento, cronologia, blocco/visibilità, bozza persistente, slot indipendenti, elementi liberi ed export SVG. Il workflow `Editor checks` li esegue sulle PR. Il deploy GitHub Pages resta sul branch `main`.
+I test Playwright eseguono gli stessi flussi su desktop e su un dispositivo mobile con touch: selezione, trascinamento, ridimensionamento, cronologia, blocco/visibilità, bozza persistente, slot indipendenti, elementi liberi ed export SVG. Il workflow `Editor checks` li esegue sulle PR. Il deploy GitHub Pages resta sul branch `main`, usa Node 24 e `npm ci` come i controlli e non pubblica se typecheck, test unitari o build falliscono. Le dipendenze hanno intervalli espliciti (il lockfile fissa le versioni).
