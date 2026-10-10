@@ -399,9 +399,8 @@ function App(){
   return <div className="appShell">
     <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
     {saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}
-    {liveMode?<LiveEditor markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} onAdd={kind=>{const id=`custom-${crypto.randomUUID()}`;update({extras:[...(card.extras||[]),{id,kind,text:'Nuovo testo',x:150,y:350,w:180,h:80}]});return id;}} onDelete={id=>{const liveEdits={...card.liveEdits};delete liveEdits[id];update({extras:card.extras?.filter(v=>v.id!==id),liveEdits});}} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
+    {liveMode?<LiveEditor markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
       const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea aria-label={label} value={value} onChange={e=>change(e.target.value)}/></label>;
-      if(id.startsWith('custom-')){const item=card.extras?.find(v=>v.id===id);return item?.kind==='text'?field('Testo libero',item.text,text=>update({extras:card.extras?.map(v=>v.id===id?{...v,text}:v)})):null;}
       if(id==='header'||id==='title')return field('Nome della carta',card.name,name=>update({name}));
       if(id==='cost'||id==='cost-value')return field('Costo',card.cost||'',cost=>update({cost}));
       if(id==='id')return field('Codice della carta',card.id,id=>update({id}));
