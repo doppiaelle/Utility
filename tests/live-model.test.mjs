@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {THEMES} from '../src/themes.ts';
-import {applyEdits,blankEdits,buildBackup,clearGeometry,fieldData,parseBackup,safeSvg,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
+import {ICONS,EXTRA_KINDS,applyEdits,blankEdits,buildBackup,clearGeometry,fieldData,parseBackup,safeSvg,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
 const {window}=new JSDOM();globalThis.DOMParser=window.DOMParser;globalThis.XMLSerializer=window.XMLSerializer;
 const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml');
 const source='<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-live-id="area"><rect width="100" height="50" rx="4" fill="#fff" stroke="#111"/><text>A</text><g data-live-id="title"><text fill="#222">B</text></g></g><g data-live-id="slot"><path fill="#fff"/></g><path id="overlay"/></svg>';
@@ -92,4 +92,14 @@ test('themes are well formed: unique ids, valid colours and known presets',()=>{
  assert.equal(new Set(THEMES.map(t=>t.id)).size,THEMES.length);assert.ok(THEMES.length>=6);
  for(const t of THEMES){assert.ok(t.label);assert.equal(t.colors.length,3);for(const c of [...t.colors,t.card.scopeColor,...Object.values(t.terrain)])assert.match(c,hex,t.id);
   assert.ok(frames.includes(t.card.framePreset),t.id);assert.ok(accents.includes(t.card.accentPreset),t.id);assert.ok(fonts.includes(t.card.titleFont)&&fonts.includes(t.card.textFont),t.id);}
+});
+test('decorative kinds and every icon render well-formed SVG that can be edited like any block',()=>{
+ const kinds=['ribbon','shield','divider'];assert.ok(kinds.every(k=>k in EXTRA_KINDS));
+ const extras=normalizeExtras([...kinds.map(kind=>({id:`custom-${kind}`,kind,x:10,y:20,w:200,h:80})),...Object.keys(ICONS).map(icon=>({id:`custom-ico-${icon}`,kind:'icon',icon,x:0,y:0,w:56,h:56}))]);
+ assert.equal(extras.length,3+Object.keys(ICONS).length);assert.ok(Object.keys(ICONS).length>=24);
+ const doc=parse(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras(extras)}</svg>`);assert.equal(doc.querySelector('parsererror'),null);
+ assert.equal(doc.querySelectorAll('[data-live-id]').length,extras.length);
+ const edited=parse(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras(extras)}</svg>`,{'custom-shield':{fill:'#aa3300'},'custom-ribbon':{fill:'#003388',stroke:'#ffffff'}}));
+ assert.equal(edited.querySelector('[data-live-id=custom-shield] path').getAttribute('fill'),'#aa3300');assert.equal(edited.querySelector('[data-live-id=custom-ribbon] path').getAttribute('stroke'),'#ffffff');
+ for(const [key,icon] of Object.entries(ICONS)){assert.ok(icon.label&&icon.body,key);assert.match(icon.body,/^(<(path|circle|rect)[^>]*\/>)+$/,key);}
 });

@@ -29,7 +29,7 @@ type FrameStyle={
   size:number;radius:number;opacity:number;inset:number;framePreset:FramePreset;frameDetail:number;frameSeed:number;
   accentSize:number;accentOpacity:number;accentPreset:AccentPreset;accentDensity:number;accentMotion:number;accentSeed:number;
 };
-type CardLayoutId='classic'|'window'|'textheavy'|'banner'|'bottomtitle';
+type CardLayoutId='classic'|'window'|'textheavy'|'banner'|'bottomtitle'|'portrait'|'seal';
 type TextRole='cost'|'title'|'meta'|'effect'|'stats';
 type TextStyle={size:number;family:string};
 type TypographyStyle=Record<TextRole,TextStyle>;
@@ -343,10 +343,16 @@ const CARD_LAYOUTS:{id:CardLayoutId;label:string;note:string}[]=[
   {id:'window',label:'Finestra',note:'Illustrazione incorniciata, informazioni sotto e un grande riquadro di testo'},
   {id:'textheavy',label:'Molto testo',note:'Illustrazione bassa e un riquadro di regole molto ampio'},
   {id:'banner',label:'Illustrazione piena',note:'Illustrazione a tutta carta, costo nell’angolo e titolo su un nastro in basso'},
-  {id:'bottomtitle',label:'Titolo in basso',note:'Illustrazione protagonista, costo e informazioni in alto, titolo in basso'}
+  {id:'bottomtitle',label:'Titolo in basso',note:'Illustrazione protagonista, costo e informazioni in alto, titolo in basso'},
+  {id:'portrait',label:'Ritratto',note:'Grande finestra per l’illustrazione con il costo sopra, titolo sotto e testo in fondo'},
+  {id:'seal',label:'Sigillo',note:'Illustrazione piena, titolo a targa in alto e il costo come sigillo sopra il testo'}
 ];
 const isCardLayout=(v:unknown):v is CardLayoutId=>typeof v==='string'&&CARD_LAYOUTS.some(l=>l.id===v);
 type Area={x:number;y:number;w:number;h:number};
+/** What a theme changes on a card: colour, frame, decorations and typefaces. */
+function cardThemePatch(card:Card,t:typeof THEMES[number]):Partial<Card>{
+  return{scopeColor:t.card.scopeColor,frame:{...card.frame,framePreset:t.card.framePreset as FramePreset,accentPreset:t.card.accentPreset as AccentPreset},typography:{...card.typography,title:{...card.typography?.title,family:t.card.titleFont},effect:{...card.typography?.effect,family:t.card.textFont}}};
+}
 /** Where every block sits for a layout; text still fits inside the boxes it is given. */
 function cardGeometry(layout:CardLayoutId,o:{contentX:number;contentW:number;topY:number;costVisible:boolean;hasMeta:boolean;hasEffects:boolean}){
   const{contentX,contentW,topY,costVisible,hasMeta,hasEffects}=o,right=630-contentX,costR=38,limit=764;
@@ -358,6 +364,8 @@ function cardGeometry(layout:CardLayoutId,o:{contentX:number;contentW:number;top
     case'window':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:300} as Area|undefined,...stack(wy+312)};}
     case'textheavy':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:170} as Area|undefined,...stack(wy+182)};}
     case'banner':return{...base,...corner(520,64),metaY:hasEffects?594:700,effectY:hasMeta?650:594,effectH:limit-(hasMeta?650:594)};
+    case'portrait':{const wy=topY;return{...base,...corner(wy+384,64),win:{x:contentX,y:wy,w:contentW,h:372} as Area|undefined,...stack(wy+460)};}
+    case'seal':return{...base,headerX:contentX+70,headerY:topY,headerW:contentW-140,headerH:64,costCx:315,costCy:540,costR,metaY:hasEffects?596:714,effectY:hasMeta?652:596,effectH:limit-(hasMeta?652:596)};
     case'bottomtitle':{const cw=costVisible?costR*2+14:0;return{...base,...corner(702,62),metaX:contentX+cw,metaW:contentW-cw,metaY:topY+(costVisible?8:0),effectY:586,effectH:104};}
     default:return{...base,...bar(topY,72),metaY:hasEffects?566:714,effectY:hasMeta?624:566,effectH:hasMeta?145:204};
   }
@@ -378,7 +386,7 @@ function svg(card:Card){
   const hasMeta=card.meta.length>0,hasEffects=card.effects.length>0;
   const g=cardGeometry(layout,{contentX,contentW,topY,costVisible,hasMeta,hasEffects});
   const{headerX,headerY,headerW,headerH,costCx,costCy,costR,metaX,metaW,metaY,effectY,effectH,statsY,win}=g;
-  const headerCy=headerY+headerH/2,headerRight=630-contentX,diamondX=headerRight-28,titleX=headerX+28,titleMax=Math.max(80,diamondX-titleX-29);
+  const headerCy=headerY+headerH/2,headerRight=headerX+headerW,diamondX=headerRight-28,titleX=headerX+28,titleMax=Math.max(80,diamondX-titleX-29);
   const titleSize=fitFontSize(card.name,clamp(typography.title.size,11,38),11,titleMax),costSize=fitFontSize(card.cost||'',clamp(typography.cost.size,10,34),10,costR*1.38);
   const titleFamily=esc(fontStack(typography.title.family)),costFamily=esc(fontStack(typography.cost.family));
   const area=win??{x:20,y:20,w:590,h:840},scale=clamp(card.artScale??1,.4,3.5),ox=card.artX??0,oy=card.artY??0,iw=area.w*scale,ih=area.h*scale,ix=area.x-(iw-area.w)/2+ox,iy=area.y-(ih-area.h)/2+oy;
@@ -424,7 +432,18 @@ function App(){
   const layoutThumbs=useMemo(()=>CARD_LAYOUTS.map(l=>({id:l.id,label:l.label,note:l.note,thumb:svg({...preset(card.type),scopeColor:card.scopeColor,frame:card.frame,typography:card.typography,layout:l.id,liveEdits:{},extras:[]})})),[card.type,card.scopeColor,card.frame,card.typography]);
   const gallery={layoutTitle:'Impostazione della carta',active:card.layout??'classic',layouts:layoutThumbs,themes:THEMES.map(t=>({id:t.id,label:t.label,colors:t.colors})),
     onLayout:(id:string)=>update({layout:id as CardLayoutId,liveEdits:clearGeometry(card.liveEdits)}),
-    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)update({scopeColor:t.card.scopeColor,frame:{...card.frame,framePreset:t.card.framePreset as FramePreset,accentPreset:t.card.accentPreset as AccentPreset},typography:{...card.typography,title:{...card.typography?.title,family:t.card.titleFont},effect:{...card.typography?.effect,family:t.card.textFont}}});}};
+    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)update(cardThemePatch(card,t));},
+    onSurprise:(o:{keepLayout:boolean;keepTheme:boolean})=>{
+      const pick=<T,>(list:T[],not?:T)=>{const rest=list.filter(x=>x!==not);return rest[Math.floor(Math.random()*rest.length)];};
+      const patch:Partial<Card>={};
+      if(!o.keepLayout){patch.layout=pick(CARD_LAYOUTS.map(l=>l.id),card.layout??'classic');patch.liveEdits=clearGeometry(card.liveEdits);}
+      if(!o.keepTheme){
+        const t=pick(THEMES,THEMES.find(v=>v.card.scopeColor===card.scopeColor)),base=cardThemePatch(card,t);
+        // Half of the time the frame or the decorations are drawn from the whole catalogue, so two runs rarely match.
+        Object.assign(patch,base,{frame:{...base.frame,...(Math.random()<.5?{framePreset:pick(FRAME_PRESETS.map(p=>p.id))}:{}),...(Math.random()<.5?{accentPreset:pick(ACCENT_PRESETS.map(p=>p.id))}:{}),frameSeed:Math.floor(Math.random()*1e6),accentSeed:Math.floor(Math.random()*1e6)}});
+      }
+      update(patch);
+    }};
   const updateLayer=(key:keyof LayerOpacity,value:number)=>update({layers:{...card.layers,[key]:value}});
   const updateFrame=(key:keyof FrameStyle,value:FrameStyle[keyof FrameStyle])=>update({frame:{...card.frame,[key]:value}});
   const updateTypography=(role:TextRole,patch:Partial<TextStyle>)=>update({typography:{...card.typography,[role]:{...normalizeTypography(card.typography)[role],...patch}}});

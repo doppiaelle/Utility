@@ -399,7 +399,13 @@ export default function TerrainEditor({onSwitchToCard,onSwitchToCollection}:{onS
   const layoutThumbs=useMemo(()=>TERRAIN_LAYOUTS.map(l=>({...l,thumb:terrainSvg(normalizeTerrain({...applyTerrainLayout(state,l.id),liveEdits:{},extras:[]}))})),[lookKey]);
   const gallery={layoutTitle:'Impostazione del terreno',active:state.look??'duel',layouts:layoutThumbs,themes:THEMES.map(t=>({id:t.id,label:t.label,colors:t.colors})),
     onLayout:(id:string)=>setState(s=>normalizeTerrain({...applyTerrainLayout(s,id),liveEdits:clearGeometry(s.liveEdits)})),
-    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)setState(s=>normalizeTerrain(applyTerrainTheme(s,t)));}};
+    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)setState(s=>normalizeTerrain(applyTerrainTheme(s,t)));},
+    onSurprise:(o:{keepLayout:boolean;keepTheme:boolean})=>setState(s=>{
+      let next=s;
+      if(!o.keepLayout){const ids=TERRAIN_LAYOUTS.map(l=>l.id).filter(id=>id!==(s.look??'duel'));next={...applyTerrainLayout(next,ids[Math.floor(Math.random()*ids.length)]),liveEdits:clearGeometry(s.liveEdits)};}
+      if(!o.keepTheme){const rest=THEMES.filter(t=>t.terrain.bg.toLowerCase()!==s.backgroundColor.toLowerCase());next=applyTerrainTheme(next,rest[Math.floor(Math.random()*rest.length)]);}
+      return normalizeTerrain(next);
+    })};
   const update=<K extends keyof TerrainState>(key:K,value:TerrainState[K])=>setState(s=>normalizeTerrain({...s,[key]:value}));
   const updateArea=(key:'outer'|'inner'|'guide'|'topLeftPanel'|'topRightPanel'|'lowerPanel',value:AreaStyle)=>setState(s=>({...s,[key]:value}));
   const updateFourGroup=(key:'topLeftGroup'|'topRightGroup',value:FourSlotGroup)=>setState(s=>({...s,[key]:value}));

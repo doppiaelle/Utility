@@ -217,7 +217,7 @@ test('pictures: insert, exact size in mm, ratio lock, print resolution, fit, dro
 test('every card layout keeps title, cost, details, text and values apart and inside the sheet',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.getByRole('tab',{name:'Stile',exact:true}).click();
- for(const label of['Classica','Finestra','Molto testo','Illustrazione piena','Titolo in basso']){
+ for(const label of['Classica','Finestra','Molto testo','Illustrazione piena','Titolo in basso','Ritratto','Sigillo']){
   const button=page.getByRole('button',{name:`Impostazione ${label}`,exact:true});await button.click();await expect(button).toHaveAttribute('aria-pressed','true');
   const boxes=await page.evaluate(()=>{const sheet=document.querySelector('.liveArtwork svg')!.getBoundingClientRect(),get=(id:string)=>{const r=document.querySelector(`.liveArtwork [data-live-id="${id}"]`)!.getBoundingClientRect();return{id,l:r.left-sheet.left,t:r.top-sheet.top,r:r.right-sheet.left,b:r.bottom-sheet.top};};return{w:sheet.width,h:sheet.height,items:['header','cost','meta-0','effects','stat-0'].map(get)};});
   for(const a of boxes.items){expect(a.l,`${label} ${a.id}`).toBeGreaterThanOrEqual(-1);expect(a.t,`${label} ${a.id}`).toBeGreaterThanOrEqual(-1);expect(a.r,`${label} ${a.id}`).toBeLessThanOrEqual(boxes.w+1);expect(a.b,`${label} ${a.id}`).toBeLessThanOrEqual(boxes.h+1);}
@@ -352,4 +352,32 @@ test('collection: importing a whole game folder reads cards, decks and roles tog
  await page.locator('input[aria-label="Cartella del gioco"]').setInputFiles(dir);
  const status=page.getByRole('status').filter({hasText:'Importate'});await expect(status).toContainText('Importate 3 carte, 1 mazzo, 1 ruolo');
  await expect(page.getByRole('tab',{name:'Carte (3)'})).toBeVisible();await expect(page.getByRole('button',{name:/^Mazzo Cartella/})).toContainText('2 carte · 4 copie');
+});
+test('Sorprendimi proposes a new combination and respects the locks',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const draft=()=>page.evaluate(()=>{const d=JSON.parse(localStorage.getItem('kritoma.cardDraft')!);return{layout:d.layout,color:d.scopeColor,frame:JSON.stringify(d.frame)};});
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ const before=await draft();await page.getByRole('button',{name:/Sorprendimi/}).click();const first=await draft();
+ expect(first.layout).not.toBe(before.layout);expect(first.color).not.toBe(before.color);
+ await page.getByLabel('Tieni l’impostazione',{exact:true}).check();await page.getByRole('button',{name:/Sorprendimi/}).click();const second=await draft();
+ expect(second.layout).toBe(first.layout);expect(second.color).not.toBe(first.color);
+ await page.getByLabel('Tieni il tema',{exact:true}).check();await page.getByLabel('Tieni l’impostazione',{exact:true}).uncheck();await page.getByRole('button',{name:/Sorprendimi/}).click();const third=await draft();
+ expect(third.color).toBe(second.color);expect(third.layout).not.toBe(second.layout);expect(third.frame).toBe(second.frame);
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();expect((await draft()).layout).toBe(second.layout);
+ await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ const terrain=()=>page.evaluate(()=>{const d=JSON.parse(localStorage.getItem('kritoma.terrain')!);return{look:d.look,bg:d.backgroundColor};});
+ const t0=await terrain();await page.getByRole('button',{name:/Sorprendimi/}).click();const t1=await terrain();expect(t1.look).not.toBe(t0.look);expect(t1.bg).not.toBe(t0.bg);
+ await expect(page.locator('.liveArtwork svg')).toBeVisible();expect(errors).toEqual([]);
+});
+test('decorations: ribbon, shield, divider and the larger icon set can be added and recoloured',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const add=page.getByLabel('Aggiungi un altro elemento');const art=page.locator('.liveArtwork [data-live-id^=custom-]');
+ await add.selectOption('ribbon');await expect(art).toHaveCount(1);await expect(art.locator('path')).toHaveCount(1);
+ await page.getByLabel('Forma',{exact:true}).selectOption('shield');await expect(art.locator('path')).toHaveAttribute('d',/Q/);
+ await page.getByText('Colori e bordi',{exact:true}).click();await page.getByLabel('Fondo',{exact:true}).fill('#aa3300');await expect(art.locator('path')).toHaveAttribute('fill','#aa3300');
+ await add.selectOption('divider');await expect(art).toHaveCount(2);await expect(art.last().locator('line')).toHaveCount(2);
+ await add.selectOption('icon');const icons=page.getByLabel('Icona',{exact:true});expect(await icons.locator('option').count()).toBeGreaterThanOrEqual(24);
+ await icons.selectOption('flame');await expect(art.last().locator('path')).toHaveCount(1);await icons.selectOption('chip');await expect(art.last().locator('rect')).toHaveCount(2);
+ await page.reload();await expect(art).toHaveCount(3);expect(errors).toEqual([]);
 });
