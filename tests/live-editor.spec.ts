@@ -86,11 +86,12 @@ test('multi-selection aligns, distributes and moves together; layers reorder',as
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  const x=async(i:number)=>{const t=await page.locator('.liveArtwork [data-live-id^=custom-]').nth(i).getAttribute('transform');return Number(/translate\((-?[\d.]+) /.exec(t||'')?.[1]??'NaN');};
  for(const offset of[-200,-50,120]){await page.getByRole('button',{name:'+ Forma',exact:true}).click();await page.getByLabel('Sposta a destra / sinistra',{exact:true}).fill(String(offset));}
- await page.getByText('Livelli',{exact:true}).click();
+ await page.getByRole('tab',{name:'Livelli',exact:true}).click();
  await page.getByRole('button',{name:'Forma aggiunta 1',exact:true}).click();
  await page.getByRole('button',{name:'Forma aggiunta 2',exact:true}).click({modifiers:['Shift']});
  await page.getByRole('button',{name:'Forma aggiunta 3',exact:true}).click({modifiers:['Shift']});
  await expect(page.getByText('3 elementi selezionati')).toBeVisible();
+ await page.getByRole('tab',{name:'Elemento',exact:true}).click();
  await page.getByRole('button',{name:'Distribuisci ↔',exact:true}).click();
  expect(Math.abs(await x(1)-(-40))).toBeLessThan(1);expect(Math.abs(await x(0)+200)).toBeLessThan(1);expect(Math.abs(await x(2)-120)).toBeLessThan(1);
  await page.getByRole('button',{name:'Allinea a sinistra',exact:true}).click();
@@ -101,6 +102,7 @@ test('multi-selection aligns, distributes and moves together; layers reorder',as
  expect(Math.abs(await x(2)-before)).toBeGreaterThan(5);
  await page.getByRole('button',{name:'Elimina',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(0);
  await page.getByRole('button',{name:'Annulla',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(3);
+ await page.getByRole('tab',{name:'Livelli',exact:true}).click();
  const names=()=>page.locator('.liveLayers .liveLayerName').allTextContents();
  const order=await names();const i=order.indexOf('Forma aggiunta 3');
  await page.getByRole('button',{name:'Porta indietro: Forma aggiunta 3',exact:true}).click();
@@ -173,4 +175,17 @@ test('workspace fills the stage, zooms and pans, shows guides and sizes in mm',a
   expect(await stage.evaluate(e=>e.scrollLeft+e.scrollTop)).toBeGreaterThan(before+50);
  }
  expect(errors).toEqual([]);
+});
+
+test('inspector tabs keep properties, layers and templates one click apart',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await expect(page.getByRole('tab',{name:'Elemento',exact:true})).toHaveAttribute('aria-selected','true');
+ await page.getByRole('tab',{name:'Livelli',exact:true}).click();
+ await expect(page.locator('.liveLayers .liveLayerName').first()).toBeVisible();await expect(page.getByLabel('Nome del modello',{exact:true})).toHaveCount(0);
+ await page.getByRole('tab',{name:'Modelli',exact:true}).click();await expect(page.getByLabel('Nome del modello',{exact:true})).toBeVisible();await expect(page.locator('.liveLayers')).toHaveCount(0);
+ await choose(page,'title');await expect(page.getByRole('tab',{name:'Modelli',exact:true})).toHaveAttribute('aria-selected','true');
+ if(isMobile)await page.locator('[data-live-id=title] text').tap();else await page.locator('[data-live-id=title] text').click();
+ await expect(page.getByRole('tab',{name:'Elemento',exact:true})).toHaveAttribute('aria-selected','true');await expect(page.getByLabel('Nome della carta',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.getByLabel('Nome del modello',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.locator('.liveInspector')).toHaveCount(0);expect(errors).toEqual([]);
 });
