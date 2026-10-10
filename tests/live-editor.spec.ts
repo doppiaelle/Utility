@@ -498,3 +498,57 @@ test('the back can carry the game logo instead of the monogram, or no emblem at 
  await page.reload();await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id=back-emblem]')).toHaveCount(0);await choose(page,'back-bg');expect((await saved()).emblem).toBe('none');
  await page.getByLabel('Emblema del retro',{exact:true}).selectOption('monogram');await expect(page.locator('[data-live-id=back-emblem] text').first()).toHaveText('K');expect(errors).toEqual([]);
 });
+
+const goTerrain=async(page:Page)=>{await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();};
+const width=(page:Page,id:string)=>page.locator(`.liveArtwork [data-live-id="${id}"]`).evaluate(el=>el.getBoundingClientRect().width);
+const height=(page:Page,id:string)=>page.locator(`.liveArtwork [data-live-id="${id}"]`).evaluate(el=>el.getBoundingClientRect().height);
+test('terrain: copy the format of one section and paste it on others, size and look, without typing numbers',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await goTerrain(page);
+ await choose(page,'deck');await page.getByLabel('Larghezza (×)',{exact:true}).fill('1.3');await page.getByLabel('Altezza (×)',{exact:true}).fill('1.2');
+ const wDeck=await width(page,'deck'),hDeck=await height(page,'deck'),before=await width(page,'grave');expect(Math.abs(before-wDeck)/wDeck).toBeGreaterThan(.1);
+ const centre=async(id:string)=>page.locator(`.liveArtwork [data-live-id="${id}"]`).evaluate(el=>{const r=el.getBoundingClientRect();return[r.left+r.width/2,r.top+r.height/2];});
+ const graveCentre=await centre('grave');
+ await page.getByRole('button',{name:'Copia formato',exact:true}).click();await expect(page.getByText('Formato copiato:')).toBeVisible();
+ await choose(page,'grave');await page.getByRole('button',{name:'Incolla dimensione',exact:true}).click();
+ expect(Math.abs(await width(page,'grave')-wDeck)/wDeck).toBeLessThan(.02);expect(Math.abs(await height(page,'grave')-hDeck)/hDeck).toBeLessThan(.02);
+ const after=await centre('grave');expect(Math.abs(after[0]-graveCentre[0])).toBeLessThan(2);expect(Math.abs(after[1]-graveCentre[1])).toBeLessThan(2);
+ await choose(page,'deck');await page.getByText('Colori e bordi',{exact:true}).click();await page.getByLabel('Fondo',{exact:true}).fill('#334455');
+ await page.getByRole('button',{name:'Copia formato',exact:true}).click();
+ await choose(page,'extra');await page.getByRole('button',{name:'Incolla aspetto',exact:true}).click();
+ expect(await page.locator('.liveArtwork [data-live-id=extra] [fill="#334455"]').count()).toBeGreaterThan(0);
+ expect(Math.abs(await width(page,'extra')-wDeck)/wDeck).toBeGreaterThan(.05);
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();expect(await page.locator('.liveArtwork [data-live-id=extra] [fill="#334455"]').count()).toBe(0);
+ expect(errors).toEqual([]);
+});
+test('terrain: several sections take the size of the first selected one, and a clone keeps size and colours',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await goTerrain(page);
+ await choose(page,'deck');await page.getByLabel('Larghezza (×)',{exact:true}).fill('1.25');await page.getByLabel('Altezza (×)',{exact:true}).fill('1.25');
+ await page.getByRole('tab',{name:'Livelli',exact:true}).click();
+ await page.getByRole('button',{name:'Mazzo',exact:true}).click();await page.getByRole('button',{name:'Cimitero',exact:true}).click({modifiers:['Shift']});await page.getByRole('button',{name:'Extra',exact:true}).click({modifiers:['Shift']});
+ await page.getByRole('tab',{name:'Elemento',exact:true}).click();await expect(page.getByText('3 elementi selezionati')).toBeVisible();
+ await page.getByRole('button',{name:'Dimensione del primo',exact:true}).click();
+ const w=await width(page,'deck');for(const id of ['grave','extra'])expect(Math.abs(await width(page,id)-w)/w,id).toBeLessThan(.02);
+ await choose(page,'deck');await page.getByRole('button',{name:'Clona come zona',exact:true}).click();
+ const clone=page.locator('.liveArtwork [data-live-id^=custom-]');await expect(clone).toHaveCount(1);await expect(clone.locator('text')).toHaveText('MAZZO');
+ const cloneW=await clone.locator('rect').first().evaluate(el=>el.getBoundingClientRect().width);expect(Math.abs(cloneW-w)/w).toBeLessThan(.06);
+ await expect(page.getByLabel('Etichetta della zona',{exact:true})).toHaveValue('MAZZO');await page.getByLabel('Etichetta della zona',{exact:true}).fill('RISERVA');await expect(clone.locator('text')).toHaveText('RISERVA');
+ await page.reload();await goTerrain(page);await expect(page.locator('.liveArtwork [data-live-id^=custom-] text')).toHaveText('RISERVA');expect(errors).toEqual([]);
+});
+test('removing things is one obvious step: a Delete button, the Delete key, and hiding for the built-in blocks',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const remove=page.getByRole('button',{name:'Elimina l’elemento selezionato',exact:true}),hide=page.getByRole('button',{name:'Nascondi l’elemento selezionato',exact:true});
+ await expect(remove).toBeDisabled();
+ await page.getByLabel('Aggiungi un altro elemento').selectOption('star');
+ const added=page.locator('.liveArtwork [data-live-id^=custom-]');await expect(added).toHaveCount(1);
+ await remove.click();await expect(added).toHaveCount(0);await expect(remove).toBeDisabled();
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();await expect(added).toHaveCount(1);
+ await page.getByLabel('Seleziona un elemento',{exact:true}).selectOption('');
+ if(isMobile)await added.locator('path').first().tap();else await added.locator('path').first().click();
+ await expect(remove).toBeEnabled();
+ if(!isMobile){await page.keyboard.press('Delete');await expect(added).toHaveCount(0);}
+ await choose(page,'title');await expect(hide).toBeEnabled();await hide.click();await expect(page.locator('[data-live-id=title]')).toHaveAttribute('display','none');
+ await page.getByRole('button',{name:'Ripristina',exact:true}).click();await expect(page.locator('[data-live-id=title]')).not.toHaveAttribute('display','none');
+ expect(errors).toEqual([]);
+});
