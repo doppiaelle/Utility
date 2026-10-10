@@ -71,6 +71,7 @@ test('blank canvas and layout templates are reusable and persist',async({page})=
  await page.getByRole('button',{name:'Tela vuota',exact:true}).click();
  await expect(page.locator('[data-live-id=title]')).toHaveAttribute('display','none');await expect(page.locator('[data-live-id=frame]')).toHaveAttribute('display','none');
  await page.getByRole('button',{name:'+ Forma',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(1);
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();
  await page.getByLabel('Nome del modello',{exact:true}).fill('Solo forma');await page.getByRole('button',{name:'Salva come modello',exact:true}).click();
  await expect(page.getByRole('button',{name:'Applica il modello Solo forma'})).toBeVisible();
  await page.getByRole('button',{name:'Annulla',exact:true}).click();await page.getByRole('button',{name:'Annulla',exact:true}).click();
