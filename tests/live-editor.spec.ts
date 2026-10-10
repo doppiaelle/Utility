@@ -464,3 +464,37 @@ test('print check: small text, unreadable colours, overlaps, low resolution and 
  const download=page.waitForEvent('download');await page.getByRole('dialog',{name:'Stampa'}).getByRole('button',{name:'Crea PDF',exact:true}).click();expect(pdfPages(await readDownload(await download))).toBe(2);
  expect(errors).toEqual([]);
 });
+
+test('Salva confirms what it did on the card, the back and the terrain',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const saved=()=>page.evaluate(()=>(JSON.parse(localStorage.getItem('kritoma.cards')||'[]') as {id:string}[]).map(c=>c.id));
+ expect(await saved()).toEqual([]);
+ await page.getByRole('button',{name:'Salva',exact:true}).click();
+ await expect(page.getByText('Carta «Nome Carta» salvata nella raccolta (1 carta).')).toBeVisible();expect(await saved()).toEqual(['KRT-001']);
+ await choose(page,'title');await page.getByLabel('Nome della carta',{exact:true}).fill('Seconda');
+ await page.getByRole('button',{name:'Salva',exact:true}).click();await expect(page.getByText('Carta «Seconda» salvata nella raccolta (1 carta).')).toBeVisible();
+ await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();
+ await page.getByRole('button',{name:'Salva',exact:true}).click();await expect(page.getByText('Il retro si salva da solo a ogni modifica')).toBeVisible();
+ await page.getByRole('button',{name:/Kritoma.*Editor/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();
+ await page.getByRole('button',{name:'Salva',exact:true}).click();await expect(page.getByText('Terreno «Terreno Kritoma» salvato')).toBeVisible();
+ await expect(page.getByText('Terreno «Terreno Kritoma» salvato')).toBeHidden({timeout:8000});expect(errors).toEqual([]);
+});
+
+test('the back can carry the game logo instead of the monogram, or no emblem at all',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('kritoma.back')!));
+ await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();
+ await choose(page,'back-bg');await page.getByLabel('Emblema del retro',{exact:true}).selectOption('logo');
+ const emblem=page.locator('.liveArtwork [data-live-id=back-emblem]');await expect(emblem.locator('image')).toHaveCount(0);await expect(emblem).toContainText('LOGO');
+ const png=await testPng(page,300,200);await page.getByLabel('Carica il logo',{exact:true}).setInputFiles({name:'logo.png',mimeType:'image/png',buffer:png});
+ await expect(emblem.locator('image')).toHaveAttribute('href',/^data:image\//);await expect(emblem).not.toContainText('LOGO');
+ expect((await saved()).logo).toMatch(/^data:image\//);expect((await saved()).emblem).toBe('logo');
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ for(const label of['Motivo','Essenziale','Emblema']){await page.getByRole('button',{name:`Impostazione ${label}`,exact:true}).click();await expect(page.locator('.liveArtwork image')).toHaveCount(1);}
+ await page.getByRole('button',{name:'Impostazione Motivo',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id=back-cartouche] image')).toHaveCount(1);
+ await page.getByRole('tab',{name:'Elemento',exact:true}).click();await choose(page,'back-bg');await page.getByRole('button',{name:'Rimuovi il logo',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id=back-cartouche]')).toContainText('LOGO');
+ await page.getByLabel('Emblema del retro',{exact:true}).selectOption('none');await expect(page.locator('.liveArtwork [data-live-id=back-cartouche]')).not.toContainText('LOGO');
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();await page.getByRole('button',{name:'Impostazione Emblema',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id=back-emblem]')).toHaveCount(0);
+ await page.reload();await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id=back-emblem]')).toHaveCount(0);await choose(page,'back-bg');expect((await saved()).emblem).toBe('none');
+ await page.getByLabel('Emblema del retro',{exact:true}).selectOption('monogram');await expect(page.locator('[data-live-id=back-emblem] text').first()).toHaveText('K');expect(errors).toEqual([]);
+});

@@ -1,4 +1,5 @@
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {readImage} from './imageFile';
 import {BACKUP_KEYS,EXTRA_KINDS,ICONS,TEMPLATE_LIMIT,blankEdits,buildBackup,isImageSrc,normalizeEdits,normalizeTemplates,parseBackup} from './liveModel';
 import type {CardLibrary,DataField,StyleGallery,ElementEdit,ExtraElement,ExtraKind,LayoutTemplate,LiveEdits} from './liveModel';
 import './live.css';
@@ -28,18 +29,6 @@ function nearest(edges:number[],lines:number[]|undefined,delta:number,threshold:
   let best:{shift:number;line:number}|undefined,distance=threshold;
   for(const line of lines??[])for(const edge of edges){const d=Math.abs(line-edge-delta);if(d<distance){distance=d;best={shift:line-edge,line};}}
   return best;
-}
-/** Downscale uploads (2000 px at most, less if needed) so drafts keep fitting in browser storage. */
-function readImage(file:File,done:(src:string,w:number,h:number)=>void,fail:()=>void){
-  const url=URL.createObjectURL(file),im=new Image();
-  im.onload=()=>{URL.revokeObjectURL(url);if(!im.naturalWidth||!im.naturalHeight){fail();return;}
-    let k=Math.min(1,2000/Math.max(im.naturalWidth,im.naturalHeight));
-    for(let attempt=0;attempt<7;attempt++){
-      const c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.naturalWidth*k));c.height=Math.max(1,Math.round(im.naturalHeight*k));c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);
-      let src=c.toDataURL('image/webp',.88);if(!src.startsWith('data:image/webp'))src=c.toDataURL('image/png');
-      if(isImageSrc(src)){done(src,c.width,c.height);return;}k*=.75;}
-    fail();};
-  im.onerror=()=>{URL.revokeObjectURL(url);fail();};im.src=url;
 }
 export function LiveEditor({kind,gallery,library,markup,width,height,edits:raw,onChange,history,children,onAdvanced,unitMm=.1,gridMm=5,safeMm=3,fields=[],extras=[],onExtras}:Props){
   const edits=normalizeEdits(raw),[selected,setSelected]=useState(''),[more,setMore]=useState<string[]>([]),[multi,setMulti]=useState(false),[others,setOthers]=useState<Box[]>([]),[zoom,setZoom]=useState(1),[snap,setSnap]=useState(true),[panel,setPanel]=useState(true),[box,setBox]=useState<Box|null>(null),[appearance,setAppearance]=useState<Record<string,string>>({}),[fitWidth,setFitWidth]=useState(400),[layers,setLayers]=useState<{id:string;label:string;parent:number}[]>([]),[guides,setGuides]=useState<{x?:number;y?:number}|null>(null),[notice,setNotice]=useState(''),[templates,setTemplates]=useState(loadTemplates),[tplName,setTplName]=useState(''),[tab,setTab]=useState<'element'|'style'|'cards'|'layers'|'templates'>('element'),[keepRatio,setKeepRatio]=useState(true),[cardFilter,setCardFilter]=useState(''),[keepLayout,setKeepLayout]=useState(false),[keepTheme,setKeepTheme]=useState(false),[includeLore,setIncludeLore]=useState(true),[importMsg,setImportMsg]=useState(''),[view,setViewState]=useState(loadView),[clean,setClean]=useState(false),[rectMm,setRectMm]=useState<RectMm|null>(null);

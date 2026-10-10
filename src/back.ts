@@ -1,5 +1,5 @@
 /** The back of the cards: one design shared by the whole game. No DOM, so it can be tested. */
-import {normalizeEdits,normalizeExtras} from './liveModel.ts';
+import {isImageSrc,normalizeEdits,normalizeExtras} from './liveModel.ts';
 import type {DataField,ExtraElement,LiveEdits} from './liveModel.ts';
 
 export type BackLayoutId='emblem'|'pattern'|'minimal';
@@ -11,8 +11,10 @@ export const BACK_LAYOUTS:{id:BackLayoutId;label:string;note:string}[]=[
 export const isBackLayout=(v:unknown):v is BackLayoutId=>typeof v==='string'&&BACK_LAYOUTS.some(l=>l.id===v);
 
 export type BackFrame=Record<string,number|string>;
-export type BackDesign={layout:BackLayoutId;color:string;title:string;subtitle:string;monogram:string;frame:BackFrame;liveEdits:LiveEdits;extras:ExtraElement[]};
-export const DEFAULT_BACK:BackDesign={layout:'emblem',color:'#1d5c6b',title:'KRITOMA',subtitle:'Gioco di carte',monogram:'K',frame:{},liveEdits:{},extras:[]};
+export type BackEmblem='monogram'|'logo'|'none';
+export const BACK_EMBLEMS:{id:BackEmblem;label:string}[]=[{id:'monogram',label:'Monogramma'},{id:'logo',label:'Logo del gioco'},{id:'none',label:'Nessun emblema'}];
+export type BackDesign={layout:BackLayoutId;color:string;title:string;subtitle:string;monogram:string;emblem:BackEmblem;logo:string;frame:BackFrame;liveEdits:LiveEdits;extras:ExtraElement[]};
+export const DEFAULT_BACK:BackDesign={layout:'emblem',color:'#1d5c6b',title:'KRITOMA',subtitle:'Gioco di carte',monogram:'K',emblem:'monogram',logo:'',frame:{},liveEdits:{},extras:[]};
 
 const FRAME_NUMBERS=['size','radius','opacity','inset','frameDetail','frameSeed','accentSize','accentOpacity','accentDensity','accentMotion','accentSeed'];
 const text=(v:unknown,fallback:string,max:number)=>typeof v==='string'?v.replace(/\s+/g,' ').trim().slice(0,max):fallback;
@@ -31,7 +33,7 @@ export function normalizeBack(raw:unknown):BackDesign{
   return{
     layout:isBackLayout(r.layout)?r.layout:DEFAULT_BACK.layout,
     color:typeof r.color==='string'&&/^#[0-9a-f]{6}$/i.test(r.color)?r.color:DEFAULT_BACK.color,
-    title,subtitle:text(r.subtitle,DEFAULT_BACK.subtitle,60),monogram,
+    title,subtitle:text(r.subtitle,DEFAULT_BACK.subtitle,60),monogram,emblem:BACK_EMBLEMS.some(e=>e.id===r.emblem)?r.emblem as BackEmblem:'monogram',logo:isImageSrc(r.logo)?r.logo:'',
     frame:cleanFrame(r.frame),liveEdits:normalizeEdits(r.liveEdits),extras:normalizeExtras(r.extras)
   };
 }
