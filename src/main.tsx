@@ -8,6 +8,9 @@ import {clearGeometry,fieldData,normalizeTemplates,safeSvg} from './liveModel';
 import {THEMES} from './themes';
 import {cleanRules,mapTcgCard,rulesText} from './importCards';
 import type {ImportedCard} from './importCards';
+import {BACK_LAYOUTS,DEFAULT_BACK,backFields,normalizeBack} from './back';
+import type {BackDesign,BackLayoutId} from './back';
+import {mix} from './color';
 import {PrintDialog} from './PrintDialog';
 import type {CardPrint} from './PrintDialog';
 import {cardSheetPdf,rasterizeJpeg} from './printPdf';
@@ -349,6 +352,26 @@ const CARD_LAYOUTS:{id:CardLayoutId;label:string;note:string}[]=[
 ];
 const isCardLayout=(v:unknown):v is CardLayoutId=>typeof v==='string'&&CARD_LAYOUTS.some(l=>l.id===v);
 type Area={x:number;y:number;w:number;h:number};
+/** The back of the cards, drawn like the front so it moves, recolours and exports the same way. */
+function backSvg(back:BackDesign):string{
+  const theme=back.color,frame={...DEFAULT_FRAME,...back.frame} as unknown as FrameStyle;
+  const dark=mix(theme,'#000000',.74),mid=mix(theme,'#000000',.5),light=mix(theme,'#ffffff',.6),glow=mix(theme,'#ffffff',.25);
+  const title=esc(back.title),subtitle=esc(back.subtitle),mono=esc(back.monogram),pattern=back.layout==='pattern',minimal=back.layout==='minimal';
+  const titleSize=fitFontSize(back.title,minimal?44:56,20,pattern?350:520);
+  const titleNode=editable('back-title','Titolo del dorso',`<text x="315" y="${pattern?452:minimal?536:668}" text-anchor="middle" font-size="${titleSize.toFixed(1)}" font-weight="700" letter-spacing="6" fill="${light}" font-family="Arial, sans-serif">${title}</text>`);
+  const subNode=editable('back-subtitle','Sottotitolo del dorso',`<text x="315" y="${pattern?498:minimal?580:714}" text-anchor="middle" font-size="24" letter-spacing="4" fill="${glow}" fill-opacity=".9" font-family="Arial, sans-serif">${subtitle}</text>`);
+  const ring=(r:number,w:number,o:number,fill='none',fo=1)=>`<circle cx="315" cy="390" r="${r}" fill="${fill}" fill-opacity="${fo}" stroke="${light}" stroke-opacity="${o}" stroke-width="${w}"/>`;
+  const rays=Array.from({length:8},(_,i)=>{const a=i*Math.PI/4;return`<line x1="${(315+150*Math.cos(a)).toFixed(1)}" y1="${(390+150*Math.sin(a)).toFixed(1)}" x2="${(315+178*Math.cos(a)).toFixed(1)}" y2="${(390+178*Math.sin(a)).toFixed(1)}"/>`;}).join('');
+  const monoNode=(size:number)=>`<text x="315" y="392" text-anchor="middle" dominant-baseline="middle" font-size="${size}" font-weight="700" fill="${light}" font-family="Georgia, serif">${mono}</text>`;
+  const body=pattern
+    ?editable('back-cartouche','Targa',`<rect x="115" y="330" width="400" height="230" rx="28" fill="${dark}" fill-opacity=".92" stroke="${light}" stroke-width="3"/><rect x="125" y="340" width="380" height="210" rx="20" fill="none" stroke="${glow}" stroke-opacity=".5" stroke-width="1.5"/><path d="M315 356 l14 14 -14 14 -14 -14Z" fill="${light}"/>`)
+    :minimal
+      ?editable('back-emblem','Emblema',`<path d="M315 300 L395 390 L315 480 L235 390 Z" fill="${mid}" fill-opacity=".8" stroke="${light}" stroke-width="3"/>${monoNode(64)}`)
+      :editable('back-emblem','Emblema',`${ring(178,2,.35)}${ring(150,3,.6,dark,.6)}<g stroke="${light}" stroke-width="4" stroke-linecap="round">${rays}</g><path d="M315 290 L415 390 L315 490 L215 390 Z" fill="none" stroke="${light}" stroke-opacity=".85" stroke-width="3"/>${ring(72,3,.9,mid,.9)}${monoNode(92)}`);
+  const defs=`<defs><clipPath id="cardClip"><rect x="20" y="20" width="590" height="840" rx="28"/></clipPath><linearGradient id="backGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${mid}"/><stop offset="1" stop-color="${dark}"/></linearGradient><pattern id="backPattern" width="64" height="64" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 32H64M32 0V64" stroke="${light}" stroke-opacity=".16" stroke-width="2"/><circle cx="32" cy="32" r="5" fill="${light}" fill-opacity=".18"/></pattern></defs>`;
+  const bg=editable('back-bg','Sfondo del dorso',`<rect x="20" y="20" width="590" height="840" rx="28" fill="url(#backGrad)"/>${pattern?`<rect x="20" y="20" width="590" height="840" rx="28" fill="url(#backPattern)" clip-path="url(#cardClip)"/>`:''}${minimal?`<rect x="60" y="60" width="510" height="760" rx="18" fill="none" stroke="${light}" stroke-opacity=".35" stroke-width="2"/>`:''}`);
+  return safeSvg(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 630 880" width="630" height="880">${defs}<rect width="630" height="880" fill="#fff"/>${bg}${editable('back-frame','Cornice',frameBaseSvg(theme,frame,1))}${editable('back-accents','Decorazioni',frameAccentSvg(theme,frame,1))}${body}${titleNode}${subNode}${renderExtras(back.extras,fieldData(backFields(back)))}</svg>`,back.liveEdits));
+}
 /** What a theme changes on a card: colour, frame, decorations and typefaces. */
 function cardThemePatch(card:Card,t:typeof THEMES[number]):Partial<Card>{
   return{scopeColor:t.card.scopeColor,frame:{...card.frame,framePreset:t.card.framePreset as FramePreset,accentPreset:t.card.accentPreset as AccentPreset},typography:{...card.typography,title:{...card.typography?.title,family:t.card.titleFont},effect:{...card.typography?.effect,family:t.card.textFont}}};
@@ -420,6 +443,11 @@ function App(){
   const store=useLocalStore(),history=useHistory<Card>(()=>{try{return normalizeCard(JSON.parse(localStorage.getItem('kritoma.cardDraft')||'null')||store.cards[0]||DEFAULT)}catch{return normalizeCard(store.cards[0]||DEFAULT)}}),card=history.value,setCard=history.set,[settingsOpen,setSettingsOpen]=useState(false);
   const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState(''),[printOpen,setPrintOpen]=useState(false),[deckPrint,setDeckPrint]=useState<Deck|null>(null);
   const [decks,setDecks]=useState<Deck[]>(()=>{try{return normalizeDecks(JSON.parse(localStorage.getItem(DECK_KEY)||'[]'))}catch{return[]}}),[roles,setRoles]=useState<Record<string,Role>>(()=>{try{return normalizeRoles(JSON.parse(localStorage.getItem(ROLES_KEY)||'{}'))}catch{return{}}});
+  const [side,setSide]=useState<'front'|'back'>('front');
+  const backHistory=useHistory<BackDesign>(()=>{try{return normalizeBack(JSON.parse(localStorage.getItem('kritoma.back')||'null'))}catch{return DEFAULT_BACK}}),back=backHistory.value;
+  useEffect(()=>{try{localStorage.setItem('kritoma.back',JSON.stringify(back))}catch{/* the back is small: a full browser is reported by the card draft */}},[back]);
+  const updateBack=(p:Partial<BackDesign>)=>backHistory.set(normalizeBack({...back,...p}));
+  const backMarkup=useMemo(()=>backSvg(back),[back]);
   useEffect(()=>{try{localStorage.setItem('kritoma.cardDraft',JSON.stringify(card));setSaveError('')}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.')}},[card]);
   const[editorMode,setEditorMode]=useState<'card'|'terrain'|'collection'>('card');
   const [foilPreview,setFoilPreview]=useState(()=>localStorage.getItem('kritoma.foilPreview')!=='false');
@@ -452,10 +480,11 @@ function App(){
   const save=()=>{try{store.save([...store.cards.filter(c=>c.id!==card.id),card]);setSaveError('')}catch{setSaveError('Salvataggio non riuscito: esporta il progetto prima di chiudere.')}};
   const resetArt=()=>update({artScale:1,artX:0,artY:0});
   const download=(name:string,blob:Blob)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)};
-  const exportSvg=()=>download(`${card.id}.svg`,new Blob([markup],{type:'image/svg+xml'}));
-  const raster=(cb:(canvas:HTMLCanvasElement)=>void)=>{const u=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'})),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=1890;c.height=2640;c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);cb(c);URL.revokeObjectURL(u)};im.src=u};
-  const exportPng=()=>raster(c=>c.toBlob(b=>b&&download(`${card.id}.png`,b),'image/png'));
-  const exportPdf=()=>raster(c=>{const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:[63,88]});pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,63,88);pdf.save(`${card.id}-print.pdf`)});
+  const out=side==='back'?{markup:backMarkup,name:'dorso'}:{markup,name:card.id};
+  const exportSvg=()=>download(`${out.name}.svg`,new Blob([out.markup],{type:'image/svg+xml'}));
+  const raster=(cb:(canvas:HTMLCanvasElement)=>void)=>{const u=URL.createObjectURL(new Blob([out.markup],{type:'image/svg+xml'})),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=1890;c.height=2640;c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);cb(c);URL.revokeObjectURL(u)};im.src=u};
+  const exportPng=()=>raster(c=>c.toBlob(b=>b&&download(`${out.name}.png`,b),'image/png'));
+  const exportPdf=()=>raster(c=>{const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:[63,88]});pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,63,88);pdf.save(`${out.name}-print.pdf`)});
   const toCard=(i:ImportedCard):Card=>normalizeCard({...preset(i.type),...i,rarity:i.rarity as RarityKey,liveEdits:{},extras:[]} as Card);
   const uniqueId=(base:string,taken:Set<string>)=>{let id=base,n=2;while(taken.has(id))id=`${base}-${n++}`;return id;};
   const persist=(next:Card[])=>{try{store.save(next.slice(-500));setSaveError('');return true;}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.');return false;}};
@@ -490,20 +519,43 @@ function App(){
     onDelete:(id:string)=>{if(window.confirm('Eliminare questa carta dalla raccolta? La carta aperta nell’editor resta com’è.'))persist(store.cards.filter(c=>c.id!==id));},
     onImport:(files:File[],o:{includeLore:boolean})=>importGame(files,{includeLore:o.includeLore,open:true})
   };
+  const backThumbs=useMemo(()=>BACK_LAYOUTS.map(l=>({id:l.id,label:l.label,note:l.note,thumb:backSvg({...back,layout:l.id,liveEdits:{},extras:[]})})),[back.color,back.title,back.subtitle,back.monogram,back.frame]);
+  const pickOne=<T,>(list:T[],not?:T)=>{const rest=list.filter(x=>x!==not);return rest[Math.floor(Math.random()*rest.length)];};
+  const backGallery={layoutTitle:'Impostazione del retro',active:back.layout,layouts:backThumbs,themes:THEMES.map(t=>({id:t.id,label:t.label,colors:t.colors})),
+    onLayout:(id:string)=>updateBack({layout:id as BackLayoutId,liveEdits:clearGeometry(back.liveEdits)}),
+    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)updateBack({color:t.card.scopeColor,frame:{...back.frame,framePreset:t.card.framePreset,accentPreset:t.card.accentPreset}});},
+    onSurprise:(o:{keepLayout:boolean;keepTheme:boolean})=>{
+      const patch:Partial<BackDesign>={};
+      if(!o.keepLayout){patch.layout=pickOne(BACK_LAYOUTS.map(l=>l.id),back.layout);patch.liveEdits=clearGeometry(back.liveEdits);}
+      if(!o.keepTheme){const t=pickOne(THEMES,THEMES.find(v=>v.card.scopeColor===back.color));patch.color=t.card.scopeColor;patch.frame={...back.frame,framePreset:Math.random()<.5?t.card.framePreset:pickOne(FRAME_PRESETS.map(p=>p.id)),accentPreset:Math.random()<.5?t.card.accentPreset:pickOne(ACCENT_PRESETS.map(p=>p.id)),frameSeed:Math.floor(Math.random()*1e6),accentSeed:Math.floor(Math.random()*1e6)};}
+      updateBack(patch);
+    }};
+  const backInspector=(id:string)=>{
+    const field=(label:string,value:string,max:number,change:(v:string)=>void)=><label>{label}<input aria-label={label} value={value} maxLength={max} onChange={e=>change(e.target.value)}/></label>;
+    if(id==='back-title')return field('Titolo del dorso',back.title,40,title=>updateBack({title}));
+    if(id==='back-subtitle')return field('Sottotitolo del dorso',back.subtitle,60,subtitle=>updateBack({subtitle}));
+    if(id==='back-emblem')return field('Monogramma',back.monogram,3,monogram=>updateBack({monogram}));
+    if(id==='back-bg')return <label>Colore del dorso<input aria-label="Colore del dorso" type="color" value={back.color} onChange={e=>updateBack({color:e.target.value})}/></label>;
+    return null;
+  };
   const asImage=(c:Card)=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg(normalizeCard(c)));
   const inCollection=editorMode==='collection';
   const collectionItems=useMemo<CollectionCard[]>(()=>inCollection?store.cards.map(c=>({id:c.id,name:c.name,typeLabel:TYPES[c.type]??'',scope:c.scope,scopeColor:c.scopeColor,rarity:c.rarity??'common',rarityLabel:RARITIES[c.rarity??'common']??'',copies:c.copies??1,thumb:asImage(c)})):[],[inCollection,store.cards]);
-  const overview=useMemo(()=>inCollection?{thumb:asImage(card),saved:store.cards.some(c=>c.id===card.id&&JSON.stringify(normalizeCard(c))===JSON.stringify(normalizeCard(card))),terrain:terrainPreview(),templates:(()=>{try{return normalizeTemplates(JSON.parse(localStorage.getItem('kritoma.templates')||'[]')).length}catch{return 0}})()}:null,[inCollection,card,store.cards]);
+  const overview=useMemo(()=>inCollection?{thumb:asImage(card),back:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(backMarkup),saved:store.cards.some(c=>c.id===card.id&&JSON.stringify(normalizeCard(c))===JSON.stringify(normalizeCard(card))),terrain:terrainPreview(),templates:(()=>{try{return normalizeTemplates(JSON.parse(localStorage.getItem('kritoma.templates')||'[]')).length}catch{return 0}})()}:null,[inCollection,card,store.cards,backMarkup]);
   const printCards=async(o:CardPrint)=>{
+    const backImage=o.back==='duplex'?await rasterizeJpeg(backMarkup,945,1320):undefined;
     if(o.content==='deck'&&deckPrint){
       const parts:{image:string;copies:number}[]=[];
       for(const [id,n] of [...deckPrint.cards.map(c=>[c.id,c.copies] as [string,number]),...deckPrint.extra.map(id=>[id,o.extraCopies] as [string,number]),...deckPrint.goals.map(id=>[id,o.extraCopies] as [string,number])]){const c=store.cards.find(x=>x.id===id);if(c)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:n});}
-      cardSheetPdf(parts,{page:o.page,marks:o.marks}).save(`${deckPrint.id}-mazzo.pdf`);return;
+      cardSheetPdf(parts,{page:o.page,marks:o.marks,backImage}).save(`${deckPrint.id}-mazzo.pdf`);return;
     }
-    if(o.mode==='single'){exportPdf();return;}
+    if(o.mode==='single'){
+      if(o.back==='duplex'){const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:[63,88]});pdf.addImage(await rasterizeJpeg(markup,1890,2640),'JPEG',0,0,63,88);pdf.addPage([63,88],'portrait');pdf.addImage(await rasterizeJpeg(backMarkup,1890,2640),'JPEG',0,0,63,88);pdf.save(`${card.id}-fronte-retro.pdf`);return;}
+      exportPdf();return;
+    }
     const list=o.content!=='current'&&store.cards.length?store.cards:[card],parts:{image:string;copies:number}[]=[];
     for(const c of list)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:o.content==='current'?o.copies:o.content==='savedCopies'?(c.copies??1):1});
-    cardSheetPdf(parts,{page:o.page,marks:o.marks}).save(`${card.id}-foglio.pdf`);
+    cardSheetPdf(parts,{page:o.page,marks:o.marks,backImage}).save(`${card.id}-foglio.pdf`);
   };
   const frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common',previewFx=RARITY_PREVIEW[rarity];
   const resetTilt=()=>{draggingRef.current=false;setTilt(NEUTRAL_TILT)};
@@ -527,9 +579,9 @@ function App(){
   if(editorMode==='collection'&&overview){
     const known=new Set(store.cards.map(c=>c.id)),deckInfo=deckPrint?deckSummary(deckPrint,known):null;
     return <><Collection cards={collectionItems} decks={decks} roles={roles}
-      draft={{id:card.id,name:card.name,thumb:overview.thumb,saved:overview.saved,terrain:overview.terrain,templates:overview.templates}}
+      draft={{id:card.id,name:card.name,thumb:overview.thumb,back:overview.back,saved:overview.saved,terrain:overview.terrain,templates:overview.templates}}
       onOpenCard={id=>{const c=store.cards.find(v=>v.id===id);if(c){setCard(normalizeCard(c));setEditorMode('card');}}}
-      onOpenDraft={()=>setEditorMode('card')} onOpenTerrain={()=>setEditorMode('terrain')} onSaveDraft={save}
+      onOpenDraft={()=>setEditorMode('card')} onOpenBack={()=>{setSide('back');setEditorMode('card');}} onOpenTerrain={()=>setEditorMode('terrain')} onSaveDraft={save}
       onImport={files=>importGame(files,{includeLore:true,open:false})}
       onDecks={next=>{try{localStorage.setItem(DECK_KEY,JSON.stringify(next));setDecks(next);}catch{window.alert('Spazio del browser esaurito: le modifiche ai mazzi non sono state salvate.');}}}
       onPrintDeck={setDeckPrint} onCard={()=>setEditorMode('card')} onTerrain={()=>setEditorMode('terrain')}/>
@@ -537,9 +589,9 @@ function App(){
   }
 
   return <div className="appShell">
-    <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')} onCollection={()=>setEditorMode('collection')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
+    <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')} onCollection={()=>setEditorMode('collection')}/><div className="sideSwitch" role="group" aria-label="Lato della carta"><button aria-pressed={side==='front'} onClick={()=>setSide('front')}>Fronte</button><button aria-pressed={side==='back'} onClick={()=>setSide('back')}>Retro</button></div>{side==='front'&&<button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button>}</header>
     {saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}
-    {liveMode?<LiveEditor kind="card" gallery={gallery} library={library} unitMm={.1} gridMm={5} safeMm={3} fields={cardFields(card)} markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
+    {side==='back'?<LiveEditor kind="back" gallery={backGallery} fields={backFields(back)} markup={backMarkup} width={630} height={880} edits={back.liveEdits} onChange={liveEdits=>updateBack({liveEdits})} history={backHistory} unitMm={.1} gridMm={5} safeMm={3} extras={back.extras} onExtras={(extras,liveEdits)=>updateBack({extras,liveEdits})}>{backInspector}</LiveEditor>:liveMode?<LiveEditor kind="card" gallery={gallery} library={library} unitMm={.1} gridMm={5} safeMm={3} fields={cardFields(card)} markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
       const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea aria-label={label} value={value} onChange={e=>change(e.target.value)}/></label>;
       if(id==='header'||id==='title')return field('Nome della carta',card.name,name=>update({name}));
       if(id==='cost'||id==='cost-value')return field('Costo',card.cost||'',cost=>update({cost}));
@@ -553,7 +605,7 @@ function App(){
       if(id.startsWith('rarity-'))return <label>Finitura della carta<select value={rarity} onChange={e=>update({rarity:e.target.value as RarityKey})}>{Object.entries(RARITIES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>;
       return <small>Modifica l’aspetto con i controlli sotto. Aggiungi o rimuovi testi nelle impostazioni avanzate.</small>;
     }}</LiveEditor>:<main className="workspace"><div className="previewWrap"><div ref={previewRef} className={`interactiveCard rarity-${rarity}${tilt.active?' isActive':''}${foilPreview?'':' isDisabled'}`} style={previewStyle} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={resetTilt} onPointerLeave={handlePointerLeave} aria-label="Anteprima carta interattiva: muovi il mouse o trascina con il dito per simulare i riflessi"><div className="preview" dangerouslySetInnerHTML={{__html:markup}}/>{foilPreview&&<div className="foilPreviewLayers" aria-hidden="true"><div className="foilHolo"/><div className="foilSparkle"/><div className="foilGlare"/></div>}</div></div></main>}
-    <nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button><button onClick={exportPng}>PNG</button><button onClick={()=>setPrintOpen(true)}>PDF</button></nav>{printOpen&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={store.cards.reduce((n,c)=>n+(c.copies??1),0)} onClose={()=>setPrintOpen(false)} onPrint={printCards}/>}
+    <nav className="bottomDock"><button onClick={save}>Salva</button>{side==='front'&&<button onClick={()=>{setLiveMode(v=>!v);resetTilt();}}>{liveMode?'Anteprima':'Live edit'}</button>}<button onClick={exportPng}>PNG</button><button onClick={()=>setPrintOpen(true)}>PDF</button></nav>{printOpen&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={store.cards.reduce((n,c)=>n+(c.copies??1),0)} onClose={()=>setPrintOpen(false)} onPrint={printCards}/>}
 
     {settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni carta">
       <div className="sheetHandle"/>
