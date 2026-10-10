@@ -3,12 +3,42 @@ export type ImportedDetail={label:string;value:string;opacity:number};
 export type ImportedStat={kind:string;value:string;opacity:number};
 export type ImportedCard={
   id:string;type:'fighter'|'location'|'action'|'extraFighter'|'objective'|'token';name:string;scope:string;scopeColor:string;cost:string;
-  rarity:string;meta:ImportedDetail[];effects:ImportedDetail[];stats:ImportedStat[];copies:number;lore:string;artPrompt:string;
+  rarity:string;meta:ImportedDetail[];effects:ImportedDetail[];stats:ImportedStat[];copies:number;lore:string;artPrompt:string;rules:Rules;
 };
+/** The structured rules of the game files, kept as plain data so nothing is lost. */
+export type Rules=Record<string,unknown>;
+const RULE_KEYS=['innesco','attivata','continuo','effetto_azione'];
+const RULE_LABELS:Record<string,string>={innesco:'Innesco',attivata:'Abilità attivata',continuo:'Effetto continuo',effetto_azione:'Effetto dell’azione'};
+function plain(v:unknown,depth:number):unknown{
+  if(v===null||typeof v==='boolean')return v;
+  if(typeof v==='number')return Number.isFinite(v)?v:null;
+  if(typeof v==='string')return v.slice(0,200);
+  if(depth<=0)return null;
+  if(Array.isArray(v))return v.slice(0,20).map(x=>plain(x,depth-1));
+  if(typeof v==='object'){const out:Record<string,unknown>={};for(const [k,x] of Object.entries(v as Record<string,unknown>).slice(0,20))if(/^[\w]{1,40}$/.test(k))out[k]=plain(x,depth-1);return out;}
+  return null;
+}
+/** Only the four known rule groups survive, limited in depth and size. */
+export function cleanRules(raw:unknown):Rules{
+  const out:Rules={};if(!raw||typeof raw!=='object'||Array.isArray(raw))return out;
+  for(const key of RULE_KEYS){const v=(raw as Record<string,unknown>)[key];if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)out[key]=plain(v,4);}
+  return out;
+}
+const words=(k:string)=>k.replace(/_/g,' ');
+function describe(v:unknown):string{
+  if(v===null||v===undefined)return'—';if(typeof v==='boolean')return v?'sì':'no';if(typeof v!=='object')return String(v);
+  if(Array.isArray(v))return v.map(describe).join(', ');
+  return Object.entries(v as Record<string,unknown>).map(([k,x])=>`${words(k)}: ${typeof x==='object'&&x&&!Array.isArray(x)?`(${describe(x)})`:describe(x)}`).join(' · ');
+}
+/** Readable lines for the editor; the wording of the file is kept, only underscores and booleans are made readable. */
+export function rulesText(rules:Rules|undefined):{label:string;text:string}[]{
+  return RULE_KEYS.filter(k=>rules&&rules[k]).map(k=>({label:RULE_LABELS[k],text:describe(rules![k])}));
+}
+
 export type ImportResult={ok:true;card:ImportedCard;warnings:string[]}|{ok:false;error:string};
 
 const TYPES:Record<string,ImportedCard['type']>={combattente:'fighter',luogo:'location',azione:'action',extracombattente:'extraFighter',obiettivo:'objective',token:'token'};
-const RARITIES:Record<string,string>={comune:'common',common:'common',rara:'rare',rare:'rare','super rara':'super','super rare':'super','ultra rara':'ultra','ultra rare':'ultra','secret rara':'secret','secret rare':'secret','ultimate rara':'ultimate','ultimate rare':'ultimate','ghost rara':'ghost','ghost rare':'ghost','gold rara':'gold','gold rare':'gold','starlight rara':'starlight','starlight rare':'starlight'};
+const RARITIES:Record<string,string>={leggendaria:'legendary',leggendario:'legendary',legendary:'legendary',comune:'common',common:'common',rara:'rare',rare:'rare','super rara':'super','super rare':'super','ultra rara':'ultra','ultra rare':'ultra','secret rara':'secret','secret rare':'secret','ultimate rara':'ultimate','ultimate rare':'ultimate','ghost rara':'ghost','ghost rare':'ghost','gold rara':'gold','gold rare':'gold','starlight rara':'starlight','starlight rare':'starlight'};
 const DISCIPLINE_COLORS:Record<string,string>={informatica:'#1d5c6b',economia:'#2f7d4f',ingegneria:'#b5652d',medicina:'#b23a48',media:'#7a4fb5',sportivi:'#2b6fb5'};
 const FALLBACK_COLORS=['#1d5c6b','#2f7d4f','#b5652d','#b23a48','#7a4fb5','#2b6fb5','#8a6a2f','#4a6a7a'];
 
@@ -32,7 +62,7 @@ export function mapTcgCard(raw:unknown,o:{includeLore?:boolean}={}):ImportResult
   const id=(text(r.id,80)||name).replace(/[^\w.\-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,80)||'carta';
   const scope=text(r.disciplina,60)||'Generale';
   const rarityName=text(r.rarita,40).toLowerCase();let rarity=RARITIES[rarityName];
-  if(!rarity){rarity=rarityName==='leggendaria'?'ultra':'common';if(rarityName)warnings.push(`Rarità «${text(r.rarita,40)}» importata come ${rarity==='ultra'?'Ultra Rare':'Comune'}.`);}
+  if(!rarity){rarity='common';if(rarityName)warnings.push(`Rarità «${text(r.rarita,40)}» sconosciuta: importata come Comune.`);}
   const speed=text(r.velocita,40),personality=list(r.personalita).join(' · ');
   const stats:ImportedStat[]=[],meta:ImportedDetail[]=[],effects:ImportedDetail[]=[];
   const stat=(kind:string,v:unknown)=>{const value=num(v);if(value!=='')stats.push({kind,value,opacity:1});};
@@ -50,5 +80,5 @@ export function mapTcgCard(raw:unknown,o:{includeLore?:boolean}={}):ImportResult
   const lore=text(r.lore,600);if(o.includeLore&&lore)effects.push(detail(lore));
   const copies=typeof r.copie==='number'&&Number.isFinite(r.copie)?Math.max(1,Math.min(99,Math.round(r.copie))):1;
   const hidesCost=type==='objective'||type==='token';
-  return{ok:true,warnings,card:{id,type,name,scope,scopeColor:disciplineColor(scope),cost:hidesCost?'':num(r.costo),rarity,meta,effects,stats,copies,lore,artPrompt:text(r.art_prompt,600)}};
+  return{ok:true,warnings,card:{id,type,name,scope,scopeColor:disciplineColor(scope),cost:hidesCost?'':num(r.costo),rarity,meta,effects,stats,copies,lore,artPrompt:text(r.art_prompt,600),rules:cleanRules(r)}};
 }

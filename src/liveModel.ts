@@ -169,6 +169,8 @@ export type StyleGallery={layoutTitle:string;active:string;layouts:{id:string;la
 
 /** The saved cards of the open editor, with what the "Carte" tab needs to browse and manage them. */
 export type CardLibrary={
+  /** What the open card knows besides what is drawn: lore, art description and the game's rules. */
+  current?:{name:string;lore:string;artPrompt:string;rules:{label:string;text:string}[]};
   items:{id:string;name:string;type:string;scope:string;copies:number;active:boolean}[];
   onOpen:(id:string)=>void;onNew:()=>void;onDuplicate:(id:string)=>void;onDelete:(id:string)=>void;
   onImport:(files:File[],o:{includeLore:boolean})=>Promise<string>;
