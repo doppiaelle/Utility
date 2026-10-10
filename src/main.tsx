@@ -4,7 +4,7 @@ import jsPDF from'jspdf';
 import'./styles.css';
 import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from './liveModel';
-import {clearGeometry,fieldData,safeSvg} from './liveModel';
+import {clearGeometry,fieldData,normalizeTemplates,safeSvg} from './liveModel';
 import {THEMES} from './themes';
 import {cleanRules,mapTcgCard,rulesText} from './importCards';
 import type {ImportedCard} from './importCards';
@@ -13,7 +13,11 @@ import type {CardPrint} from './PrintDialog';
 import {cardSheetPdf,rasterizeJpeg} from './printPdf';
 import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
-import TerrainEditor,{EditorSwitcher}from'./TerrainEditor';
+import TerrainEditor,{EditorSwitcher,terrainPreview}from'./TerrainEditor';
+import {Collection} from './Collection';
+import type {CollectionCard} from './Collection';
+import {DECK_KEY,ROLES_KEY,classifyFile,deckSummary,mapTcgDeck,mapTcgRoles,normalizeDecks,normalizeRoles} from './decks';
+import type {Deck,Role} from './decks';
 
 type CardType='fighter'|'location'|'action'|'extraFighter'|'objective'|'token';
 type Detail={label:string;value:string;icon?:string;opacity?:number};
@@ -406,9 +410,10 @@ function TypographyControls({label,value,onChange,min,max}:{label:string;value:T
 
 function App(){
   const store=useLocalStore(),history=useHistory<Card>(()=>{try{return normalizeCard(JSON.parse(localStorage.getItem('kritoma.cardDraft')||'null')||store.cards[0]||DEFAULT)}catch{return normalizeCard(store.cards[0]||DEFAULT)}}),card=history.value,setCard=history.set,[settingsOpen,setSettingsOpen]=useState(false);
-  const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState(''),[printOpen,setPrintOpen]=useState(false);
+  const [liveMode,setLiveMode]=useState(true),[saveError,setSaveError]=useState(''),[printOpen,setPrintOpen]=useState(false),[deckPrint,setDeckPrint]=useState<Deck|null>(null);
+  const [decks,setDecks]=useState<Deck[]>(()=>{try{return normalizeDecks(JSON.parse(localStorage.getItem(DECK_KEY)||'[]'))}catch{return[]}}),[roles,setRoles]=useState<Record<string,Role>>(()=>{try{return normalizeRoles(JSON.parse(localStorage.getItem(ROLES_KEY)||'{}'))}catch{return{}}});
   useEffect(()=>{try{localStorage.setItem('kritoma.cardDraft',JSON.stringify(card));setSaveError('')}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.')}},[card]);
-  const[editorMode,setEditorMode]=useState<'card'|'terrain'>('card');
+  const[editorMode,setEditorMode]=useState<'card'|'terrain'|'collection'>('card');
   const [foilPreview,setFoilPreview]=useState(()=>localStorage.getItem('kritoma.foilPreview')!=='false');
   const [reduceMotion,setReduceMotion]=useState(()=>{const saved=localStorage.getItem('kritoma.reduceMotion');return saved!==null?saved==='true':window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false});
   const [tilt,setTilt]=useState<TiltState>(NEUTRAL_TILT),previewRef=useRef<HTMLDivElement>(null),draggingRef=useRef(false),inputRef=useRef<HTMLInputElement>(null),markup=useMemo(()=>svg(card),[card]);
@@ -435,6 +440,28 @@ function App(){
   const toCard=(i:ImportedCard):Card=>normalizeCard({...preset(i.type),...i,rarity:i.rarity as RarityKey,liveEdits:{},extras:[]} as Card);
   const uniqueId=(base:string,taken:Set<string>)=>{let id=base,n=2;while(taken.has(id))id=`${base}-${n++}`;return id;};
   const persist=(next:Card[])=>{try{store.save(next.slice(-500));setSaveError('');return true;}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.');return false;}};
+  /** Cards, decks and roles of the game repository, from any mix of files (or a whole folder). */
+  const importGame=async(files:File[],o:{includeLore:boolean;open:boolean})=>{
+    const incoming:Card[]=[],newDecks:Deck[]=[],newRoles:Record<string,Role>={},problems:string[]=[],notes:string[]=[];let ignored=0;
+    for(const f of files.slice(0,1000)){
+      let raw:unknown;try{raw=JSON.parse(await f.text());}catch{problems.push(`${f.name}: non è un JSON leggibile.`);continue;}
+      const kind=classifyFile(raw);
+      if(kind==='card'){const r=mapTcgCard(raw,{includeLore:o.includeLore});if(r.ok){incoming.push(toCard(r.card));notes.push(...r.warnings.map(w=>`${f.name}: ${w}`));}else problems.push(`${f.name}: ${r.error}`);}
+      else if(kind==='deck'){const r=mapTcgDeck(raw);if(r.ok)newDecks.push(r.deck);else problems.push(`${f.name}: ${r.error}`);}
+      else if(kind==='roles')Object.assign(newRoles,mapTcgRoles(raw));
+      else ignored++;
+    }
+    const roleCount=Object.keys(newRoles).length;
+    if(!incoming.length&&!newDecks.length&&!roleCount)return problems.length?`Nessuna carta importata. ${problems.slice(0,3).join(' ')}`:`Nessun elemento riconosciuto${ignored?` (${ignored} file ignorati)`:''}.`;
+    if(incoming.length){const ids=new Set(incoming.map(c=>c.id));if(!persist([...store.cards.filter(c=>!ids.has(c.id)),...incoming]))return'Spazio del browser esaurito: non ho importato nulla.';}
+    try{
+      if(newDecks.length){const ids=new Set(newDecks.map(d=>d.id)),next=[...decks.filter(d=>!ids.has(d.id)),...newDecks];localStorage.setItem(DECK_KEY,JSON.stringify(next));setDecks(next);}
+      if(roleCount){const next={...roles,...newRoles};localStorage.setItem(ROLES_KEY,JSON.stringify(next));setRoles(next);}
+    }catch{return'Spazio del browser esaurito: mazzi o ruoli non salvati.';}
+    if(o.open&&incoming.length)setCard(incoming[0]);
+    const parts=[incoming.length&&`${incoming.length} ${incoming.length===1?'carta':'carte'}`,newDecks.length&&`${newDecks.length} ${newDecks.length===1?'mazzo':'mazzi'}`,roleCount&&`${roleCount} ${roleCount===1?'ruolo':'ruoli'}`].filter(Boolean).join(', ');
+    return`Importate ${parts}${problems.length?`, ${problems.length} scartate (${problems.slice(0,3).join(' ')})`:''}.${ignored?` ${ignored} file ignorati.`:''}${notes.length?` ${notes.slice(0,2).join(' ')}`:''}`;
+  };
   const library={
     current:{name:card.name,lore:card.lore??'',artPrompt:card.artPrompt??'',rules:rulesText(card.rules)},
     items:store.cards.map(c=>({id:c.id,name:c.name,type:TYPES[c.type]??'',scope:c.scope,copies:c.copies??1,active:c.id===card.id})),
@@ -442,20 +469,18 @@ function App(){
     onNew:()=>{const id=uniqueId(`KRT-${String(store.cards.length+1).padStart(3,'0')}`,new Set([card.id,...store.cards.map(c=>c.id)]));setCard({...preset('fighter'),id});},
     onDuplicate:(id:string)=>{const c=store.cards.find(v=>v.id===id);if(!c)return;const copy=normalizeCard({...c,id:uniqueId(`${c.id}-copia`,new Set([card.id,...store.cards.map(v=>v.id)]))});if(persist([...store.cards,copy]))setCard(copy);},
     onDelete:(id:string)=>{if(window.confirm('Eliminare questa carta dalla raccolta? La carta aperta nell’editor resta com’è.'))persist(store.cards.filter(c=>c.id!==id));},
-    onImport:async(files:File[],o:{includeLore:boolean})=>{
-      const incoming:Card[]=[],problems:string[]=[],notes:string[]=[];
-      for(const f of files.slice(0,500)){
-        try{const r=mapTcgCard(JSON.parse(await f.text()),{includeLore:o.includeLore});if(r.ok){incoming.push(toCard(r.card));notes.push(...r.warnings.map(w=>`${f.name}: ${w}`));}else problems.push(`${f.name}: ${r.error}`);}
-        catch{problems.push(`${f.name}: non è un JSON leggibile.`);}
-      }
-      if(!incoming.length)return problems.length?`Nessuna carta importata. ${problems.slice(0,3).join(' ')}`:'Nessuna carta da importare.';
-      const ids=new Set(incoming.map(c=>c.id));
-      if(!persist([...store.cards.filter(c=>!ids.has(c.id)),...incoming]))return'Spazio del browser esaurito: non ho importato nulla.';
-      setCard(incoming[0]);
-      return`Importate ${incoming.length} ${incoming.length===1?'carta':'carte'}${problems.length?`, ${problems.length} scartate (${problems.slice(0,3).join(' ')})`:''}.${notes.length?` ${notes.slice(0,2).join(' ')}`:''}`;
-    }
+    onImport:(files:File[],o:{includeLore:boolean})=>importGame(files,{includeLore:o.includeLore,open:true})
   };
+  const asImage=(c:Card)=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg(normalizeCard(c)));
+  const inCollection=editorMode==='collection';
+  const collectionItems=useMemo<CollectionCard[]>(()=>inCollection?store.cards.map(c=>({id:c.id,name:c.name,typeLabel:TYPES[c.type]??'',scope:c.scope,scopeColor:c.scopeColor,rarity:c.rarity??'common',rarityLabel:RARITIES[c.rarity??'common']??'',copies:c.copies??1,thumb:asImage(c)})):[],[inCollection,store.cards]);
+  const overview=useMemo(()=>inCollection?{thumb:asImage(card),saved:store.cards.some(c=>c.id===card.id&&JSON.stringify(normalizeCard(c))===JSON.stringify(normalizeCard(card))),terrain:terrainPreview(),templates:(()=>{try{return normalizeTemplates(JSON.parse(localStorage.getItem('kritoma.templates')||'[]')).length}catch{return 0}})()}:null,[inCollection,card,store.cards]);
   const printCards=async(o:CardPrint)=>{
+    if(o.content==='deck'&&deckPrint){
+      const parts:{image:string;copies:number}[]=[];
+      for(const [id,n] of [...deckPrint.cards.map(c=>[c.id,c.copies] as [string,number]),...deckPrint.extra.map(id=>[id,1] as [string,number]),...deckPrint.goals.map(id=>[id,1] as [string,number])]){const c=store.cards.find(x=>x.id===id);if(c)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:n});}
+      cardSheetPdf(parts,{page:o.page,marks:o.marks}).save(`${deckPrint.id}-mazzo.pdf`);return;
+    }
     if(o.mode==='single'){exportPdf();return;}
     const list=o.content!=='current'&&store.cards.length?store.cards:[card],parts:{image:string;copies:number}[]=[];
     for(const c of list)parts.push({image:await rasterizeJpeg(svg(normalizeCard(c)),945,1320),copies:o.content==='current'?o.copies:o.content==='savedCopies'?(c.copies??1):1});
@@ -479,10 +504,21 @@ function App(){
     '--glare-opacity':String(foilPreview?previewFx.glare:0),'--holo-opacity':String(foilPreview?previewFx.holo:0),'--sparkle-opacity':String(foilPreview?previewFx.sparkle:0)
   } as React.CSSProperties;
 
-  if(editorMode==='terrain')return <TerrainEditor onSwitchToCard={()=>setEditorMode('card')}/>;
+  if(editorMode==='terrain')return <TerrainEditor onSwitchToCard={()=>setEditorMode('card')} onSwitchToCollection={()=>setEditorMode('collection')}/>;
+  if(editorMode==='collection'&&overview){
+    const known=new Set(store.cards.map(c=>c.id)),deckInfo=deckPrint?deckSummary(deckPrint,known):null;
+    return <><Collection cards={collectionItems} decks={decks} roles={roles}
+      draft={{id:card.id,name:card.name,thumb:overview.thumb,saved:overview.saved,terrain:overview.terrain,templates:overview.templates}}
+      onOpenCard={id=>{const c=store.cards.find(v=>v.id===id);if(c){setCard(normalizeCard(c));setEditorMode('card');}}}
+      onOpenDraft={()=>setEditorMode('card')} onOpenTerrain={()=>setEditorMode('terrain')} onSaveDraft={save}
+      onImport={files=>importGame(files,{includeLore:true,open:false})}
+      onDecks={next=>{try{localStorage.setItem(DECK_KEY,JSON.stringify(next));setDecks(next);}catch{window.alert('Spazio del browser esaurito: le modifiche ai mazzi non sono state salvate.');}}}
+      onPrintDeck={setDeckPrint} onCard={()=>setEditorMode('card')} onTerrain={()=>setEditorMode('terrain')}/>
+      {deckPrint&&deckInfo&&<PrintDialog kind="card" savedCount={store.cards.length} savedCopies={0} deck={{name:deckPrint.name,distinct:deckInfo.distinct+deckInfo.extra+deckInfo.goals-deckInfo.missing.length,copies:deckPrint.cards.filter(c=>known.has(c.id)).reduce((n,c)=>n+c.copies,0)+[...deckPrint.extra,...deckPrint.goals].filter(id=>known.has(id)).length,skipped:deckInfo.missing.length}} onClose={()=>setDeckPrint(null)} onPrint={async o=>{await printCards(o);}}/>}</>;
+  }
 
   return <div className="appShell">
-    <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
+    <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')} onCollection={()=>setEditorMode('collection')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
     {saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}
     {liveMode?<LiveEditor kind="card" gallery={gallery} library={library} unitMm={.1} gridMm={5} safeMm={3} fields={cardFields(card)} markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
       const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea aria-label={label} value={value} onChange={e=>change(e.target.value)}/></label>;
