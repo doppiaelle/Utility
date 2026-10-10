@@ -29,3 +29,13 @@ export function readableOn(color:string,background:string,min=4.5):string{
   for(let t=.05;t<=1.0001;t+=.05){const c=mix(color,towards,t);if(contrast(c,background)>=min)return c;}
   return towards;
 }
+/** Rotates the hue by `deg` degrees keeping saturation and lightness, for related colours of one palette. */
+export function rotateHue(hex:string,deg:number):string{
+  const c=parseHex(hex);if(!c)return hex;
+  const [r,g,b]=c.map(v=>v/255),max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/2,d=max-min;
+  if(!d)return hex;
+  const sat=l>.5?d/(2-max-min):d/(max+min);
+  let h=max===r?(g-b)/d+(g<b?6:0):max===g?(b-r)/d+2:(r-g)/d+4;h=((h/6*360+deg)%360+360)%360/360;
+  const q=l<.5?l*(1+sat):l+sat-l*sat,p=2*l-q,f=(t:number)=>{const x=((t%1)+1)%1;return x<1/6?p+(q-p)*6*x:x<1/2?q:x<2/3?p+(q-p)*(2/3-x)*6:p;};
+  return toHex([f(h+1/3)*255,f(h)*255,f(h-1/3)*255]);
+}
