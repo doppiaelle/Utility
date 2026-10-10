@@ -270,3 +270,33 @@ test('print dialog: a sheet of nine cards and a terrain split into pages',async(
  const second=page.waitForEvent('download');await t.getByRole('button',{name:'Crea PDF',exact:true}).click();const tiles=await second;
  expect(tiles.suggestedFilename()).toMatch(/-pagine\.pdf$/);expect(pdfPages(await readDownload(tiles))).toBe(6);expect(errors).toEqual([]);
 });
+
+const sample=(o:Record<string,unknown>)=>({name:`${o.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(o))});
+test('importing game cards: browse, open, duplicate, delete, keep after reload, print with copies',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>void d.accept());
+ await page.getByRole('tab',{name:'Carte',exact:true}).click();await expect(page.getByText('Nessuna carta salvata')).toBeVisible();
+ const input=page.locator('input[type=file][accept*=json][multiple]');
+ await input.setInputFiles([
+  sample({id:'CMB-uno',categoria:'Combattente',nome:'Primo Guerriero',disciplina:'Sportivi',costo:2,atk:3,res:4,prf:0,personalita:['Metodico'],velocita:'Rapido',effetto:'Pesca 1 carta.',lore:'Corre sempre.',rarita:'Comune',copie:3}),
+  sample({id:'OBI-due',categoria:'Obiettivo',nome:'Secondo Traguardo',disciplina:'Medicina',costo:0,condizione:'Hai 4 carte.',pv:2,rarita:'Rara',copie:2}),
+  sample({id:'AZI-tre',categoria:'Azione',nome:'Terza Mossa',disciplina:'Sportivi',costo:1,tipo:'Istantanea',velocita:'Rapido',effetto:'Scarta 1 carta.',rarita:'Leggendaria',copie:4}),
+  {name:'rotto.json',mimeType:'application/json',buffer:Buffer.from('{non e json')},
+  sample({id:'x',categoria:'Boh',nome:'Sconosciuta'}),
+ ]);
+ const status=page.getByRole('status').filter({hasText:'Importate'});await expect(status).toContainText('Importate 3 carte');await expect(status).toContainText('2 scartate');await expect(status).toContainText('Leggendaria');
+ await expect(page.getByText('3 carte salvate · 9 copie in totale')).toBeVisible();
+ await expect(page.locator('[data-live-id=title] text')).toHaveText('Primo Guerriero');await expect(page.locator('[data-live-id=cost-value] text')).toHaveText('2');
+ await expect(page.locator('[data-live-id=stat-0]')).toContainText('3');await expect(page.locator('[data-live-id=meta-0]')).toContainText('Metodico');
+ await expect(page.locator('[data-live-id=effects]')).toContainText('Pesca 1 carta.');await expect(page.locator('[data-live-id=effects]')).toContainText('Corre sempre.');
+ await page.getByRole('button',{name:/^Secondo Traguardo/}).click();await expect(page.locator('[data-live-id=title] text')).toHaveText('Secondo Traguardo');await expect(page.locator('[data-live-id=effects]')).toContainText('CONDIZIONE: Hai 4 carte.');
+ await page.getByLabel('Cerca una carta',{exact:true}).fill('sportivi');await expect(page.getByRole('button',{name:/^Secondo Traguardo/})).toHaveCount(0);await expect(page.getByRole('button',{name:/^Terza Mossa/})).toBeVisible();
+ await page.getByLabel('Cerca una carta',{exact:true}).fill('');
+ await page.getByRole('button',{name:'Duplica la carta Terza Mossa',exact:true}).click();await expect(page.getByText('4 carte salvate')).toBeVisible();await expect(page.locator('[data-live-id=id] text').last()).toContainText('AZI-tre-copia');
+ await page.getByRole('button',{name:'Elimina la carta Terza Mossa',exact:true}).first().click();await expect(page.getByText('3 carte salvate')).toBeVisible();
+ await page.reload();await page.getByRole('tab',{name:'Carte',exact:true}).click();await expect(page.getByText('3 carte salvate')).toBeVisible();await expect(page.getByRole('button',{name:/^Primo Guerriero/})).toBeVisible();
+ await page.getByRole('button',{name:'PDF',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Stampa'});
+ await dialog.getByLabel('Quali carte',{exact:true}).selectOption('savedCopies');await expect(dialog.getByRole('status')).toContainText('9 carte su 1 pagina A4');
+ await dialog.getByLabel('Quali carte',{exact:true}).selectOption('saved');await expect(dialog.getByRole('status')).toContainText('3 carte su 1 pagina A4');
+ await dialog.getByLabel('Quali carte',{exact:true}).selectOption('savedCopies');
+ const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const pdf=await readDownload(await download);expect(pdfPages(pdf)).toBe(1);expect(errors).toEqual([]);
+});
