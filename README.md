@@ -25,6 +25,8 @@ Editor SVG per le sei tipologie di carte e per i terreni di gioco, con anteprima
 
 Backup: nel pannello “Modelli”, “Esporta progetto (JSON)” salva carte, bozza, terreno e modelli in un solo file; “Importa progetto” li ripristina (dopo conferma) e se lo spazio del browser non basta lascia intatti i dati precedenti. Il file importato è trattato come non fidato: i campi della carta vengono convalidati e l’SVG mostrato o esportato è ripulito da script, gestori `on…` e link `javascript:`.
 
+Stampa: il pulsante “PDF” apre la finestra “Stampa in PDF”. Per le carte: una carta a 63×88 mm, oppure un foglio A4 (9 carte) o A3 (16) a misura reale, con la stessa carta ripetuta o tutte le carte salvate e segni di taglio nei margini. Per il terreno: un unico foglio a misura reale (stampa professionale) oppure diviso in pagine A4/A3 con sovrapposizione regolabile, linee tratteggiate dove incollare e segni d’angolo. In ogni caso stampa al 100%, senza “adatta alla pagina”.
+
 Le bozze si salvano automaticamente nel browser. “Salva” conserva la carta nella raccolta locale. I progetti precedenti mantengono l’aspetto di partenza: `liveEdits` ed `extras` sono campi aggiuntivi. La stessa grafica SVG alimenta tutte le esportazioni; contorni di selezione e maniglie restano esclusi. L’ordine si applica agli elementi dello stesso gruppo; le finiture fisse conservano la loro posizione. La dimensione del testo può essere regolata oltre l’adattamento automatico: verifica l’anteprima prima di stampare.
 
 ## Sviluppo e verifiche
