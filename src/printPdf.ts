@@ -24,7 +24,7 @@ function drawCardMarks(pdf:jsPDF,plan:ReturnType<typeof cardSheetPlan>){
 }
 
 /** Pages of cards at true size; every image is repeated `copies` times in reading order. */
-export function cardSheetPdf(parts:{image:string;copies:number}[],o:{page:PageName;marks:boolean}):jsPDF{
+export function cardSheetPdf(parts:{image:string;copies:number}[],o:{page:PageName;marks:boolean;backImage?:string}):jsPDF{
   const page=PAGES[o.page],plan=cardSheetPlan(page);
   if(!plan.perPage)throw new Error('La pagina è troppo piccola per una carta');
   const pdf=new jsPDF({unit:'mm',format:[page.w,page.h],orientation:'portrait',compress:true});
@@ -33,6 +33,12 @@ export function cardSheetPdf(parts:{image:string;copies:number}[],o:{page:PageNa
     if(i)pdf.addPage([page.w,page.h],'portrait');
     sequence.slice(i,i+plan.perPage).forEach((id,k)=>pdf.addImage(images[id],'JPEG',plan.cells[k].x,plan.cells[k].y,CARD_MM.w,CARD_MM.h,`card${id}`,'FAST'));
     if(o.marks)drawCardMarks(pdf,plan);
+    // Duplex printing flips the sheet on its long edge: each back sits behind its front, so the columns are mirrored.
+    if(o.backImage){
+      pdf.addPage([page.w,page.h],'portrait');
+      sequence.slice(i,i+plan.perPage).forEach((_,k)=>pdf.addImage(o.backImage!,'JPEG',page.w-plan.cells[k].x-CARD_MM.w,plan.cells[k].y,CARD_MM.w,CARD_MM.h,'cardBack','FAST'));
+      if(o.marks)drawCardMarks(pdf,plan);
+    }
   }
   return pdf;
 }
