@@ -425,3 +425,20 @@ test('the back is part of the project backup',async({page})=>{
  await page.getByRole('tab',{name:'Modelli',exact:true}).click();const download=page.waitForEvent('download');await page.getByRole('button',{name:'Esporta progetto (JSON)',exact:true}).click();
  const json=JSON.parse(await readDownload(await download));expect(json.data['kritoma.back'].subtitle).toBe('Edizione di prova');
 });
+
+test('placeholder illustrations: one card from the editor, many from the collection',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>void d.accept());
+ await choose(page,'artwork');
+ await page.getByLabel('Stile del segnaposto',{exact:true}).selectOption('cristalli');await page.getByRole('button',{name:'Genera segnaposto',exact:true}).click();
+ const image=page.locator('.liveArtwork [data-live-id=artwork] image');await expect(image).toHaveCount(1);await expect(image).toHaveAttribute('href',/^data:image\/svg\+xml;base64,/);
+ const first=await image.getAttribute('href');await page.getByRole('button',{name:'Genera segnaposto',exact:true}).click();await expect(image).not.toHaveAttribute('href',first!);
+ await page.reload();await expect(image).toHaveAttribute('href',/^data:image\/svg\+xml/);
+ await choose(page,'artwork');await page.getByRole('button',{name:'Rimuovi illustrazione',exact:true}).click();await expect(image).toHaveCount(0);
+ await page.getByRole('button',{name:/Kritoma.*Editor/}).click();await page.getByRole('button',{name:/Raccolta.*Bozze/}).click();
+ const base={disciplina:'Sportivi',costo:1,rarita:'Comune',copie:1};
+ await page.locator('input[type=file][accept*=json][multiple]').setInputFiles(['Uno','Due','Tre'].map(n=>sample({...base,id:'CMB-'+n,categoria:'Combattente',nome:n,atk:1,res:1,prf:0})));
+ const batch=page.getByRole('button',{name:/^Segnaposto per le 3 carte senza illustrazione/});await expect(batch).toBeEnabled();await batch.click();
+ await expect(page.getByRole('status').filter({hasText:'Aggiunti 3 segnaposto'})).toBeVisible();await expect(page.getByRole('button',{name:'Tutte le carte hanno un’illustrazione'})).toBeDisabled();
+ const arts=await page.evaluate(()=>JSON.parse(localStorage.getItem('kritoma.cards')!).map((c:{art?:string})=>(c.art||'').slice(0,26)));expect(arts).toEqual(Array(3).fill('data:image/svg+xml;base64,'));
+ await page.getByRole('tab',{name:/^Carte \(/}).click();await expect(page.locator('.colGrid img').first()).toBeVisible();expect(errors).toEqual([]);
+});
