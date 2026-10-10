@@ -536,3 +536,19 @@ test('terrain: several sections take the size of the first selected one, and a c
  await expect(page.getByLabel('Etichetta della zona',{exact:true})).toHaveValue('MAZZO');await page.getByLabel('Etichetta della zona',{exact:true}).fill('RISERVA');await expect(clone.locator('text')).toHaveText('RISERVA');
  await page.reload();await goTerrain(page);await expect(page.locator('.liveArtwork [data-live-id^=custom-] text')).toHaveText('RISERVA');expect(errors).toEqual([]);
 });
+test('removing things is one obvious step: a Delete button, the Delete key, and hiding for the built-in blocks',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const remove=page.getByRole('button',{name:'Elimina l’elemento selezionato',exact:true}),hide=page.getByRole('button',{name:'Nascondi l’elemento selezionato',exact:true});
+ await expect(remove).toBeDisabled();
+ await page.getByLabel('Aggiungi un altro elemento').selectOption('star');
+ const added=page.locator('.liveArtwork [data-live-id^=custom-]');await expect(added).toHaveCount(1);
+ await remove.click();await expect(added).toHaveCount(0);await expect(remove).toBeDisabled();
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();await expect(added).toHaveCount(1);
+ await page.getByLabel('Seleziona un elemento',{exact:true}).selectOption('');
+ if(isMobile)await added.locator('path').first().tap();else await added.locator('path').first().click();
+ await expect(remove).toBeEnabled();
+ if(!isMobile){await page.keyboard.press('Delete');await expect(added).toHaveCount(0);}
+ await choose(page,'title');await expect(hide).toBeEnabled();await hide.click();await expect(page.locator('[data-live-id=title]')).toHaveAttribute('display','none');
+ await page.getByRole('button',{name:'Ripristina',exact:true}).click();await expect(page.locator('[data-live-id=title]')).not.toHaveAttribute('display','none');
+ expect(errors).toEqual([]);
+});
