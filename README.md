@@ -6,6 +6,7 @@ Editor SVG per le sei tipologie di carte e per i terreni di gioco, con anteprima
 
 - Tocca o clicca un elemento per selezionarlo; trascinalo per spostarlo.
 - La maniglia quadrata modifica larghezza e altezza; quella tonda ruota. Su desktop, Shift mantiene le proporzioni durante il ridimensionamento.
+- Il pannello laterale ha tre schede: “Elemento” (proprietà del blocco selezionato), “Livelli” (pila dei blocchi con riordino, visibilità e selezione) e “Modelli” (tela vuota, modelli, backup). Il selettore in alto resta sempre visibile; toccare un blocco sulla grafica riporta su “Elemento”, e con più blocchi selezionati una barra lo ricorda in ogni scheda. Il pulsante “Modelli” della barra apre e chiude la scheda omonima.
 - Il pannello dell’elemento compare a destra su desktop e sotto la grafica su mobile. L’elenco permette di raggiungere anche blocchi nascosti, sovrapposti o vuoti.
 - Modifica testi, colori, bordi, caratteri, dimensioni, rotazione, opacità e ordine, separatamente per ciascun elemento. I controlli di aspetto compaiono quando applicabili.
 - Aggiungi elementi liberi: testo, rettangolo, cerchio, linea, triangolo, rombo, esagono, stella, icone del gioco e immagini (ridimensionate al caricamento per restare nello spazio del browser). Duplicali (Ctrl/Cmd+D), blocca, nascondi, ripristina o elimina quelli aggiunti; con Canc un elemento aggiunto viene eliminato, uno della carta viene nascosto.
