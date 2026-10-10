@@ -333,6 +333,7 @@ test('collection: drafts, decks from the game files, cards gallery, deck printin
  await page.reload();await goCollection(page);const again=page.getByRole('button',{name:/^Mazzo Rapido/});await expect(again).toContainText('pronto');await expect(again).toContainText('2 carte · 5 copie');await again.click();
  const open=page.getByRole('article',{name:'Mazzo Mazzo Rapido'});await open.getByRole('button',{name:'Stampa il mazzo',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Stampa'});await expect(dialog).toContainText('Mazzo «Mazzo Rapido»: 3 carte diverse, 6 copie (1 non importate, saltate)');await expect(dialog.getByLabel('Formato')).toHaveCount(0);
+ await dialog.getByLabel('Copie di ogni extra e obiettivo',{exact:true}).fill('3');await expect(dialog).toContainText('3 carte diverse, 8 copie');await dialog.getByLabel('Copie di ogni extra e obiettivo',{exact:true}).fill('1');
  const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const dl=await download;expect(dl.suggestedFilename()).toBe('mazzo-prova-mazzo.pdf');expect(pdfPages(await readDownload(dl))).toBe(1);
  await page.getByRole('tab',{name:/^Carte \(/}).click();await expect(page.getByText('4 di 4 carte')).toBeVisible();
  await page.getByLabel('Tipologia',{exact:true}).selectOption('ExtraCombattente');await expect(page.getByText('1 di 4 carte')).toBeVisible();await page.getByLabel('Tipologia',{exact:true}).selectOption('');
@@ -380,4 +381,13 @@ test('decorations: ribbon, shield, divider and the larger icon set can be added 
  await add.selectOption('icon');const icons=page.getByLabel('Icona',{exact:true});expect(await icons.locator('option').count()).toBeGreaterThanOrEqual(24);
  await icons.selectOption('flame');await expect(art.last().locator('path')).toHaveCount(1);await icons.selectOption('chip');await expect(art.last().locator('rect')).toHaveCount(2);
  await page.reload();await expect(art).toHaveCount(3);expect(errors).toEqual([]);
+});
+test('role colours stay readable on the dark surface',async({page})=>{
+ await page.getByRole('button',{name:/Kritoma.*Editor/}).click();await page.getByRole('button',{name:/Raccolta.*Bozze/}).click();
+ await page.locator('input[type=file][accept*=json][multiple]').setInputFiles([
+  {name:'_ruoli.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({ruoli:[{id:'difesa',nome:'Difesa',colore:'#64748b',descrizione:'Regge.'}]}))},
+  {name:'mazzo.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({id:'m',nome:'Mazzo Difesa',ruolo:'difesa',stato:'bozza',carte:[]}))}]);
+ const badge=page.getByRole('button',{name:/^Mazzo Difesa/}).locator('i',{hasText:'Difesa'});await expect(badge).toBeVisible();
+ const ratio=await badge.evaluate(el=>{const rgb=(s:string)=>(s.match(/\d+/g)||[]).slice(0,3).map(Number);const lin=(v:number)=>{const x=v/255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;};const lum=(c:number[])=>.2126*lin(c[0])+.7152*lin(c[1])+.0722*lin(c[2]);const a=lum(rgb(getComputedStyle(el).color)),b=lum([0x15,0x1d,0x24]);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
+ expect(ratio).toBeGreaterThanOrEqual(4.5);
 });
