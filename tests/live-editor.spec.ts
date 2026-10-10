@@ -47,3 +47,20 @@ test('terrain has independent slots, usable mobile layout and persistent custom 
  const stage=await page.locator('.liveStage').boundingBox(),panel=await page.locator('.liveInspector').boundingBox(),canvas=await page.locator('.liveCanvas').boundingBox();expect(stage!.height).toBeGreaterThan(100);expect(panel!.height).toBeGreaterThan(100);expect(canvas!.width).toBeLessThanOrEqual(stage!.width);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
  await page.reload();await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();await expect(page.locator('[data-live-id=centerGroup-1]')).toHaveAttribute('transform',/translate\(30 0\)/);await expect(page.locator('[data-live-id=deck] text')).toHaveText('MAZZO PERSONALE');
 });
+test('free shapes, icons, duplicate, alignment and edge handles',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByLabel('Aggiungi un altro elemento').selectOption('ellipse');
+ await expect(page.locator('.liveArtwork [data-live-id^=custom-] ellipse')).toHaveCount(1);
+ await page.getByRole('button',{name:'Allinea a sinistra',exact:true}).click();
+ const g=page.locator('.liveArtwork [data-live-id^=custom-]');await expect(g).toHaveAttribute('transform',/translate\(-\d/);
+ await page.getByRole('button',{name:'Duplica',exact:true}).click();await expect(g).toHaveCount(2);
+ await page.getByLabel('Forma',{exact:true}).selectOption('star');await expect(page.locator('.liveArtwork [data-live-id^=custom-] path')).toHaveCount(1);
+ await page.getByLabel('Aggiungi un altro elemento').selectOption('icon');await page.getByLabel('Icona',{exact:true}).selectOption('bolt');await expect(g).toHaveCount(3);
+ await page.getByLabel('Aggiungi un altro elemento').selectOption('line');
+ // Side handles need room: at the fitted mobile zoom a thin line only keeps the corner handle, so enlarge it with zoom there.
+ if(!isMobile){ const side=page.locator('[data-live-handle=resize--1-0]'),before=await page.getByLabel('Larghezza (×)',{exact:true}).inputValue();expect(before).toBe('1');
+ const h=await side.boundingBox();expect(h).toBeTruthy();await drag(page,{x:h!.x+h!.width/2,y:h!.y+h!.height/2},{x:h!.x+h!.width/2-30,y:h!.y+h!.height/2},!!isMobile);
+ await expect(page.getByLabel('Larghezza (×)',{exact:true})).not.toHaveValue('1');await expect(page.getByLabel('Altezza (×)',{exact:true})).toHaveValue('1');}
+ await page.getByRole('button',{name:'Elimina elemento aggiunto',exact:true}).click();await expect(g).toHaveCount(3);
+ await page.reload();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(3);expect(errors).toEqual([]);
+});

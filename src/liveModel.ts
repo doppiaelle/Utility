@@ -45,10 +45,49 @@ export function applyEdits(markup:string,raw:LiveEdits|undefined):string{
   return new XMLSerializer().serializeToString(doc.documentElement);
 }
 
-export type ExtraElement={id:string;kind:'text'|'shape';text:string;x:number;y:number;w:number;h:number};
-export function normalizeExtras(raw:unknown):ExtraElement[]{return Array.isArray(raw)?raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&['text','shape'].includes(v.kind)).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(1600,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(920,v.h)):80})):[];}
+export const EXTRA_KINDS={text:'Testo',shape:'Rettangolo',ellipse:'Cerchio',line:'Linea',triangle:'Triangolo',diamond:'Rombo',hexagon:'Esagono',star:'Stella',image:'Immagine',icon:'Icona'} as const;
+export type ExtraKind=keyof typeof EXTRA_KINDS;
+/** Line icons drawn in a 28-unit box centred on the origin. */
+export const ICONS:Record<string,{label:string;body:string}>={
+  sword:{label:'Spada',body:'<path d="M-9 10 6-5M2-9l8-1-1 8M-11 7l4 4M-7 3l4 4"/>'},
+  shield:{label:'Scudo',body:'<path d="M0-12 10-8v8c0 8-4.5 13-10 16-5.5-3-10-8-10-16v-8Z"/><path d="m-4 1 3 3 6-7"/>'},
+  target:{label:'Mirino',body:'<circle r="9"/><circle r="3"/><path d="M0-14v4M0 10v4M-14 0h4M10 0h4"/>'},
+  heart:{label:'Cuore',body:'<path d="M0 11S-11 4-11-4c0-5 6-8 11-2 5-6 11-3 11 2 0 8-11 15-11 15Z"/>'},
+  star:{label:'Scintilla',body:'<path d="M0-11 3-3 11 0 3 3 0 11-3 3-11 0-3-3Z"/>'},
+  bolt:{label:'Fulmine',body:'<path d="M3-13-8 2h7l-2 11 10-15H3Z"/>'},
+  crown:{label:'Corona',body:'<path d="M-11 9h22l2-15-7 6-6-10-6 10-7-6Z"/>'},
+  drop:{label:'Goccia',body:'<path d="M0-12c5 7 8 10 8 14a8 8 0 0 1-16 0c0-4 3-7 8-14Z"/>'},
+  arrow:{label:'Freccia',body:'<path d="M-11 0h21M3-7l7 7-7 7"/>'},
+  gem:{label:'Gemma',body:'<path d="M0-12 12 0 0 12-12 0ZM-12 0h24M0-12-5 0 0 12 5 0Z"/>'}
+};
+export type ExtraElement={id:string;kind:ExtraKind;text:string;x:number;y:number;w:number;h:number;src?:string;icon?:string};
+/** Embedded images only: exports stay self-contained and nothing is fetched. */
+export const isImageSrc=(v:unknown):v is string=>typeof v==='string'&&v.length<=3_000_000&&/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/.test(v);
+export function normalizeExtras(raw:unknown):ExtraElement[]{
+  if(!Array.isArray(raw))return[];
+  return raw.slice(0,100).filter(v=>v&&/^custom-[\w-]+$/.test(v.id)&&Object.hasOwn(EXTRA_KINDS,v.kind)&&(v.kind!=='image'||isImageSrc(v.src))).map(v=>({id:v.id,kind:v.kind,text:String(v.text??'').slice(0,2000),x:Number.isFinite(v.x)?v.x:100,y:Number.isFinite(v.y)?v.y:100,w:Number.isFinite(v.w)?Math.max(10,Math.min(1600,v.w)):180,h:Number.isFinite(v.h)?Math.max(10,Math.min(920,v.h)):80,...(v.kind==='image'?{src:v.src}:{}),...(v.kind==='icon'?{icon:Object.hasOwn(ICONS,v.icon)?v.icon:'star'}:{})}));
+}
 const escapeText=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!));
-export function renderExtras(raw:ExtraElement[]|undefined){return normalizeExtras(raw).map(v=>editable(v.id,v.kind==='text'?'Testo aggiunto':'Forma aggiunta',v.kind==='text'?`<text x="${v.x}" y="${v.y}" fill="#f4efe5" font-family="Arial" font-size="24">${v.text.split('\n').map((line,i)=>`<tspan x="${v.x}" dy="${i?1.3:0}em">${escapeText(line)}</tspan>`).join('')}</text>`:`<rect x="${v.x}" y="${v.y}" width="${v.w}" height="${v.h}" rx="12" fill="#1d5c6b" stroke="#eee6da" stroke-width="2"/>`)).join('');}
+const n2=(n:number)=>Math.round(n*100)/100;
+const SHAPE='fill="#1d5c6b" stroke="#eee6da" stroke-width="2"';
+function extraBody(v:ExtraElement):string{
+  const {x,y,w,h}=v,poly=(points:[number,number][])=>`<path d="M${points.map(([px,py])=>`${n2(x+px*w)} ${n2(y+py*h)}`).join('L')}Z" ${SHAPE} stroke-linejoin="round"/>`;
+  // Invisible hit area: thin strokes stay easy to pick with a finger.
+  const hit=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" pointer-events="all"/>`;
+  switch(v.kind){
+    case'text':return`<text x="${x}" y="${y}" fill="#f4efe5" font-family="Arial" font-size="24">${v.text.split('\n').map((line,i)=>`<tspan x="${x}" dy="${i?1.3:0}em">${escapeText(line)}</tspan>`).join('')}</text>`;
+    case'ellipse':return`<ellipse cx="${x+w/2}" cy="${y+h/2}" rx="${w/2}" ry="${h/2}" ${SHAPE}/>`;
+    case'line':return`${hit}<line x1="${x}" y1="${y+h/2}" x2="${x+w}" y2="${y+h/2}" stroke="#eee6da" stroke-width="4" stroke-linecap="round"/>`;
+    case'triangle':return poly([[.5,0],[1,1],[0,1]]);
+    case'diamond':return poly([[.5,0],[1,.5],[.5,1],[0,.5]]);
+    case'hexagon':return poly([[.25,0],[.75,0],[1,.5],[.75,1],[.25,1],[0,.5]]);
+    case'star':return poly(Array.from({length:10},(_,i)=>{const a=(i*36-90)*Math.PI/180,r=i%2?.2:.5;return[.5+r*Math.cos(a),.5+r*Math.sin(a)] as [number,number]}));
+    case'image':return`<image href="${v.src}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`;
+    case'icon':return`${hit}<g transform="translate(${x+w/2} ${y+h/2}) scale(${n2(Math.min(w,h)/28)})" fill="none" stroke="#f8f5ef" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round">${ICONS[v.icon??'star'].body}</g>`;
+    default:return`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" ${SHAPE}/>`;
+  }
+}
+export function renderExtras(raw:ExtraElement[]|undefined){return normalizeExtras(raw).map((v,i)=>editable(v.id,`${v.kind==='text'?'Testo aggiunto':v.kind==='shape'?'Forma aggiunta':EXTRA_KINDS[v.kind]} ${i+1}`,extraBody(v))).join('');}
 
 /** Array-backed card fields keep their edits when a preceding field is removed. */
 export function removeIndexedEdits(raw:LiveEdits|undefined,prefix:'meta'|'effect'|'stat',index:number):LiveEdits{
