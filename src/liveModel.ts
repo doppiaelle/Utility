@@ -169,7 +169,7 @@ export function parseBackup(text:string):BackupResult{
   if('kritoma.terrain' in data&&data['kritoma.terrain']!==null){const v=data['kritoma.terrain'];if(!plain(v))return{ok:false,error:'Il terreno nel backup non è valido.'};entries['kritoma.terrain']=JSON.stringify(v);summary.terrain=true;}
   if('kritoma.templates' in data){const v=normalizeTemplates(data['kritoma.templates']);entries['kritoma.templates']=JSON.stringify(v);summary.templates=v.length;}
   if('kritoma.decks' in data){const v=normalizeDecks(data['kritoma.decks']);entries['kritoma.decks']=JSON.stringify(v);summary.decks=v.length;}
-  if('kritoma.back' in data&&data['kritoma.back']!==null){const v=data['kritoma.back'];if(!plain(v)||JSON.stringify(v).length>300000)return{ok:false,error:'Il retro nel backup non è valido.'};entries['kritoma.back']=JSON.stringify(v);summary.back=true;}
+  if('kritoma.back' in data&&data['kritoma.back']!==null){const v=data['kritoma.back'];if(!plain(v)||JSON.stringify(v).length>1_000_000)return{ok:false,error:'Il retro nel backup non è valido.'};entries['kritoma.back']=JSON.stringify(v);summary.back=true;}
   if('kritoma.roles' in data)entries['kritoma.roles']=JSON.stringify(normalizeRoles(data['kritoma.roles']));
   return Object.keys(entries).length?{ok:true,entries,summary}:{ok:false,error:'Il backup non contiene dati da importare.'};
 }

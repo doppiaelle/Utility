@@ -1,10 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {BACK_LAYOUTS,DEFAULT_BACK,backFields,normalizeBack} from '../src/back.ts';
+import {BACK_EMBLEMS,BACK_LAYOUTS,DEFAULT_BACK,backFields,normalizeBack} from '../src/back.ts';
 import {buildBackup,normalizeTemplates,parseBackup} from '../src/liveModel.ts';
 
 test('the back falls back to the default design for anything unusable',()=>{
- for(const bad of [null,undefined,'x',7,[],{}])assert.deepEqual(normalizeBack(bad),{...DEFAULT_BACK,frame:{},liveEdits:{},extras:[]});
+ for(const bad of [null,undefined,'x',7,[],{}])assert.deepEqual(normalizeBack(bad),{...DEFAULT_BACK,frame:{},liveEdits:{},extras:[]});assert.deepEqual([DEFAULT_BACK.emblem,DEFAULT_BACK.logo],['monogram','']);
  assert.equal(DEFAULT_BACK.monogram,'K');
 });
 test('title, colour and layout are validated; the monogram follows the title unless set',()=>{
@@ -26,7 +26,14 @@ test('backups carry the back, and templates can be saved for it',()=>{
  const store={'kritoma.back':JSON.stringify({layout:'pattern',title:'Prova'})};
  const r=parseBackup(buildBackup(k=>store[k]??null));assert.equal(r.ok,true);assert.equal(r.summary.back,true);assert.equal(JSON.parse(r.entries['kritoma.back']).layout,'pattern');
  assert.equal(parseBackup(JSON.stringify({format:'kritoma-backup',version:1,data:{'kritoma.back':'x'}})).ok,false);
- assert.equal(parseBackup(JSON.stringify({format:'kritoma-backup',version:1,data:{'kritoma.back':{title:'y'.repeat(400000)}}})).ok,false);
+ assert.equal(parseBackup(JSON.stringify({format:'kritoma-backup',version:1,data:{'kritoma.back':{title:'y'.repeat(1100000)}}})).ok,false);
  assert.deepEqual(normalizeTemplates([{id:'tpl-b',name:'Retro',kind:'back'},{id:'tpl-c',name:'x',kind:'other'}]).map(t=>t.kind),['back']);
  assert.equal(normalizeTemplates([{id:'tpl-b',name:'Retro',kind:'back'}],'card').length,0);
+});
+test('the emblem is a monogram, the game logo or nothing, and only a real picture is accepted as a logo',()=>{
+ const png='data:image/png;base64,iVBORw0KGgo=';
+ assert.deepEqual([normalizeBack({emblem:'logo',logo:png}).emblem,normalizeBack({emblem:'logo',logo:png}).logo],['logo',png]);
+ assert.equal(normalizeBack({emblem:'none'}).emblem,'none');assert.equal(normalizeBack({emblem:'strano'}).emblem,'monogram');
+ for(const bad of ['javascript:alert(1)','https://example.com/x.png','data:image/svg+xml;base64,PHN2Zz4=','data:text/html;base64,PHA+','x"onload="y',7,null])assert.equal(normalizeBack({emblem:'logo',logo:bad}).logo,'',String(bad));
+ assert.equal(BACK_EMBLEMS.length,3);
 });
