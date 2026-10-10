@@ -120,3 +120,35 @@ export function blankEdits(ids:string[],raw:LiveEdits|undefined):LiveEdits{
   for(const id of ids)if(!id.startsWith('custom-'))result[id]={...edits[id],hidden:true};
   return result;
 }
+
+/** Defence at the rendering boundary: saved drafts and imported backups end up inside SVG markup. */
+export function safeSvg(markup:string):string{
+  if(!/\son[a-z]+\s*=|<script|<foreignObject|javascript:/i.test(markup))return markup;
+  const doc=new DOMParser().parseFromString(markup,'image/svg+xml');
+  if(doc.querySelector('parsererror')||doc.documentElement.tagName!=='svg')return'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>';
+  doc.querySelectorAll('script,foreignObject').forEach(n=>n.remove());
+  doc.querySelectorAll('*').forEach(n=>{for(const a of Array.from(n.attributes))if(/^on/i.test(a.name)||/^\s*javascript:/i.test(a.value))n.removeAttribute(a.name);});
+  return new XMLSerializer().serializeToString(doc.documentElement);
+}
+
+/** One JSON file holding everything the editors keep in the browser. */
+export const BACKUP_KEYS=['kritoma.cards','kritoma.cardDraft','kritoma.terrain','kritoma.templates'] as const;
+export const BACKUP_MAX_CHARS=40_000_000;
+export function buildBackup(read:(key:string)=>string|null,now=new Date()):string{
+  const data:Record<string,unknown>={};
+  for(const key of BACKUP_KEYS){const raw=read(key);if(raw===null)continue;try{data[key]=JSON.parse(raw);}catch{/* an unreadable entry is left out rather than breaking the whole backup */}}
+  return JSON.stringify({format:'kritoma-backup',version:1,exportedAt:now.toISOString(),data});
+}
+export type BackupResult={ok:true;entries:Record<string,string>;summary:{cards:number;terrain:boolean;draft:boolean;templates:number}}|{ok:false;error:string};
+const plain=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
+export function parseBackup(text:string):BackupResult{
+  if(typeof text!=='string'||text.length>BACKUP_MAX_CHARS)return{ok:false,error:'File troppo grande o non valido.'};
+  let file:unknown;try{file=JSON.parse(text);}catch{return{ok:false,error:'Il file non è un JSON leggibile.'};}
+  if(!plain(file)||file.format!=='kritoma-backup'||file.version!==1||!plain(file.data))return{ok:false,error:'Non è un backup di questo editor (formato o versione sconosciuti).'};
+  const entries:Record<string,string>={},summary={cards:0,terrain:false,draft:false,templates:0},data=file.data;
+  if('kritoma.cards' in data){const v=data['kritoma.cards'];if(!Array.isArray(v)||v.length>500||!v.every(plain))return{ok:false,error:'Le carte salvate nel backup non sono valide.'};entries['kritoma.cards']=JSON.stringify(v);summary.cards=v.length;}
+  if('kritoma.cardDraft' in data&&data['kritoma.cardDraft']!==null){const v=data['kritoma.cardDraft'];if(!plain(v))return{ok:false,error:'La bozza della carta nel backup non è valida.'};entries['kritoma.cardDraft']=JSON.stringify(v);summary.draft=true;}
+  if('kritoma.terrain' in data&&data['kritoma.terrain']!==null){const v=data['kritoma.terrain'];if(!plain(v))return{ok:false,error:'Il terreno nel backup non è valido.'};entries['kritoma.terrain']=JSON.stringify(v);summary.terrain=true;}
+  if('kritoma.templates' in data){const v=normalizeTemplates(data['kritoma.templates']);entries['kritoma.templates']=JSON.stringify(v);summary.templates=v.length;}
+  return Object.keys(entries).length?{ok:true,entries,summary}:{ok:false,error:'Il backup non contiene dati da importare.'};
+}

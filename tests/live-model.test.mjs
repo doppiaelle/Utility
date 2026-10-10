@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {applyEdits,blankEdits,fieldData,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
+import {applyEdits,blankEdits,buildBackup,fieldData,parseBackup,safeSvg,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
 const {window}=new JSDOM();globalThis.DOMParser=window.DOMParser;globalThis.XMLSerializer=window.XMLSerializer;
 const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml');
 const source='<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-live-id="area"><rect width="100" height="50" rx="4" fill="#fff" stroke="#111"/><text>A</text><g data-live-id="title"><text fill="#222">B</text></g></g><g data-live-id="slot"><path fill="#fff"/></g><path id="overlay"/></svg>';
@@ -57,4 +57,20 @@ test('a linked text shows the live value, escaped, and falls back to its own tex
  const texts=Array.from(doc.querySelectorAll('[data-live-id] text')).map(t=>Array.from(t.querySelectorAll('tspan')).map(s=>s.textContent));
  assert.deepEqual(texts,[['Drago <A>','rosso'],['own'],['t'],['toString']]);
  assert.equal(renderExtras(extras),renderExtras(extras,{}));
+});
+
+test('safeSvg strips handlers, scripts and javascript: links and leaves clean markup untouched',()=>{
+ const clean='<svg xmlns="http://www.w3.org/2000/svg"><g onclick-label="x"><text>on=1</text></g></svg>';
+ assert.equal(safeSvg(clean),clean);
+ const dirty=safeSvg('<svg xmlns="http://www.w3.org/2000/svg"><rect onload="alert(1)" fill="#fff"/><script>alert(2)</script><foreignObject><div/></foreignObject><a href="javascript:alert(3)"><circle/></a></svg>');
+ const doc=parse(dirty);assert.equal(doc.querySelector('script'),null);assert.equal(doc.querySelector('foreignObject'),null);assert.equal(doc.querySelector('rect').getAttribute('onload'),null);assert.equal(doc.querySelector('rect').getAttribute('fill'),'#fff');assert.equal(doc.querySelector('a').getAttribute('href'),null);
+ assert.match(safeSvg('<svg onload="x"><unclosed></svg>'),/viewBox="0 0 10 10"/);
+});
+test('backups round-trip, drop invalid templates and refuse foreign or oversized files',()=>{
+ const store={'kritoma.cards':JSON.stringify([{id:'A'}]),'kritoma.terrain':JSON.stringify({name:'T'}),'kritoma.templates':JSON.stringify([{id:'tpl-a',name:'Base',kind:'card',liveEdits:{},extras:[]},{id:'bad',name:'x',kind:'card'}]),'kritoma.cardDraft':'not json'};
+ const json=buildBackup(k=>store[k]??null,new Date('2026-01-02T03:04:05Z'));
+ const result=parseBackup(json);assert.equal(result.ok,true);assert.deepEqual(result.summary,{cards:1,terrain:true,draft:false,templates:1});
+ assert.deepEqual(JSON.parse(result.entries['kritoma.templates']).map(t=>t.id),['tpl-a']);assert.equal('kritoma.cardDraft' in result.entries,false);
+ for(const bad of['{','[]','{"format":"x"}','{"format":"kritoma-backup","version":2,"data":{}}','{"format":"kritoma-backup","version":1,"data":{}}','{"format":"kritoma-backup","version":1,"data":{"kritoma.cards":[1]}}','{"format":"kritoma-backup","version":1,"data":{"kritoma.cards":"x"}}'])assert.equal(parseBackup(bad).ok,false,bad);
+ assert.equal(parseBackup('x'.repeat(40_000_001)).ok,false);
 });
