@@ -64,3 +64,19 @@ test('free shapes, icons, duplicate, alignment and edge handles',async({page,isM
  await page.getByRole('button',{name:'Elimina elemento aggiunto',exact:true}).click();await expect(g).toHaveCount(3);
  await page.reload();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(3);expect(errors).toEqual([]);
 });
+
+test('blank canvas and layout templates are reusable and persist',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('button',{name:'Modelli',exact:true}).click();
+ await page.getByRole('button',{name:'Tela vuota',exact:true}).click();
+ await expect(page.locator('[data-live-id=title]')).toHaveAttribute('display','none');await expect(page.locator('[data-live-id=frame]')).toHaveAttribute('display','none');
+ await page.getByRole('button',{name:'+ Forma',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(1);
+ await page.getByLabel('Nome del modello',{exact:true}).fill('Solo forma');await page.getByRole('button',{name:'Salva come modello',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Applica il modello Solo forma'})).toBeVisible();
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();await page.getByRole('button',{name:'Annulla',exact:true}).click();
+ await expect(page.locator('[data-live-id=title]')).not.toHaveAttribute('display','none');await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(0);
+ await page.getByRole('button',{name:'Applica il modello Solo forma'}).click();
+ await expect(page.locator('[data-live-id=title]')).toHaveAttribute('display','none');await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(1);
+ await page.reload();await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.getByRole('button',{name:'Applica il modello Solo forma'})).toBeVisible();
+ await page.getByRole('button',{name:'Elimina il modello Solo forma'}).click();await expect(page.getByRole('button',{name:'Applica il modello Solo forma'})).toHaveCount(0);expect(errors).toEqual([]);
+});

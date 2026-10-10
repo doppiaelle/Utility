@@ -95,3 +95,24 @@ export function removeIndexedEdits(raw:LiveEdits|undefined,prefix:'meta'|'effect
   for(const [id,edit] of Object.entries(normalizeEdits(raw))){const match=id.match(new RegExp(`^(${prefix}-(?:icon-)?)(\\d+)$`));if(!match){result[id]=edit;continue;}const n=Number(match[2]);if(n!==index)result[`${match[1]}${n>index?n-1:n}`]=edit;}
   return result;
 }
+
+/** A reusable layout: per-block edits plus free elements, never card or terrain content. */
+export type LayoutTemplate={id:string;name:string;kind:'card'|'terrain';liveEdits:LiveEdits;extras:ExtraElement[]};
+export const TEMPLATE_LIMIT=50;
+export function normalizeTemplates(raw:unknown,kind?:'card'|'terrain'):LayoutTemplate[]{
+  if(!Array.isArray(raw))return[];
+  const seen=new Set<string>(),result:LayoutTemplate[]=[];
+  for(const v of raw){
+    if(!v||typeof v!=='object'||!/^tpl-[\w-]+$/.test(v.id)||seen.has(v.id)||(v.kind!=='card'&&v.kind!=='terrain')||(kind&&v.kind!==kind))continue;
+    const name=String(v.name??'').trim().slice(0,60);if(!name)continue;
+    seen.add(v.id);result.push({id:v.id,name,kind:v.kind,liveEdits:normalizeEdits(v.liveEdits),extras:normalizeExtras(v.extras)});
+    if(result.length>=TEMPLATE_LIMIT)break;
+  }
+  return result;
+}
+/** Blank canvas: every built-in block hidden (still listed, so it can be restored) and no free elements. */
+export function blankEdits(ids:string[],raw:LiveEdits|undefined):LiveEdits{
+  const edits=normalizeEdits(raw),result:LiveEdits={};
+  for(const id of ids)if(!id.startsWith('custom-'))result[id]={...edits[id],hidden:true};
+  return result;
+}

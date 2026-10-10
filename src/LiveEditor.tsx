@@ -1,15 +1,17 @@
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {EXTRA_KINDS,ICONS,isImageSrc,normalizeEdits} from './liveModel';
-import type {ElementEdit,ExtraElement,ExtraKind,LiveEdits} from './liveModel';
+import {EXTRA_KINDS,ICONS,TEMPLATE_LIMIT,blankEdits,isImageSrc,normalizeEdits,normalizeTemplates} from './liveModel';
+import type {ElementEdit,ExtraElement,ExtraKind,LayoutTemplate,LiveEdits} from './liveModel';
 import './live.css';
 
 type History={undo:()=>void;redo:()=>void;begin:()=>void;end:()=>void;canUndo:boolean;canRedo:boolean};
-type Props={markup:string;width:number;height:number;edits?:LiveEdits;onChange:(edits:LiveEdits)=>void;history:History;children:(id:string)=>React.ReactNode;onAdvanced:()=>void;extras?:ExtraElement[];onExtras:(extras:ExtraElement[],edits:LiveEdits)=>void};
+type Props={kind:'card'|'terrain';markup:string;width:number;height:number;edits?:LiveEdits;onChange:(edits:LiveEdits)=>void;history:History;children:(id:string)=>React.ReactNode;onAdvanced:()=>void;extras?:ExtraElement[];onExtras:(extras:ExtraElement[],edits:LiveEdits)=>void};
 type Box={x:number;y:number;w:number;h:number;matrix:string;handle?:number};
 type Rect={l:number;t:number;r:number;b:number};
 type Gesture={id:string;pointer:number;x:number;y:number;edit:ElementEdit;box:Box;mode:string;hx:number;hy:number;inverse:DOMMatrix;original?:ElementEdit;rect?:Rect;xs?:number[];ys?:number[];threshold:number};
 const HANDLES:[number,number][]=[[-1,-1],[1,-1],[-1,1],[1,1],[0,-1],[0,1],[-1,0],[1,0]];
 const SHAPE_KINDS:ExtraKind[]=['shape','ellipse','triangle','diamond','hexagon','star'];
+const TEMPLATE_KEY='kritoma.templates';
+const loadTemplates=():LayoutTemplate[]=>{try{return normalizeTemplates(JSON.parse(localStorage.getItem(TEMPLATE_KEY)||'[]'))}catch{return[]}};
 const scaleLimit=(n:number)=>Math.max(.1,Math.min(5,n));
 /** Nearest guide within reach of any edge of the moving block. */
 function nearest(edges:number[],lines:number[]|undefined,delta:number,threshold:number){
@@ -26,8 +28,8 @@ function readImage(file:File,done:(src:string,w:number,h:number)=>void,fail:()=>
     if(isImageSrc(src))done(src,c.width,c.height);else fail();};
   im.onerror=()=>{URL.revokeObjectURL(url);fail();};im.src=url;
 }
-export function LiveEditor({markup,width,height,edits:raw,onChange,history,children,onAdvanced,extras=[],onExtras}:Props){
-  const edits=normalizeEdits(raw),[selected,select]=useState(''),[zoom,setZoom]=useState(1),[snap,setSnap]=useState(true),[panel,setPanel]=useState(true),[box,setBox]=useState<Box|null>(null),[appearance,setAppearance]=useState<Record<string,string>>({}),[fitWidth,setFitWidth]=useState(400),[layers,setLayers]=useState<{id:string;label:string}[]>([]),[guides,setGuides]=useState<{x?:number;y?:number}|null>(null),[notice,setNotice]=useState('');
+export function LiveEditor({kind,markup,width,height,edits:raw,onChange,history,children,onAdvanced,extras=[],onExtras}:Props){
+  const edits=normalizeEdits(raw),[selected,select]=useState(''),[zoom,setZoom]=useState(1),[snap,setSnap]=useState(true),[panel,setPanel]=useState(true),[box,setBox]=useState<Box|null>(null),[appearance,setAppearance]=useState<Record<string,string>>({}),[fitWidth,setFitWidth]=useState(400),[layers,setLayers]=useState<{id:string;label:string}[]>([]),[guides,setGuides]=useState<{x?:number;y?:number}|null>(null),[notice,setNotice]=useState(''),[templates,setTemplates]=useState(loadTemplates),[tplOpen,setTplOpen]=useState(false),[tplName,setTplName]=useState('');
   const stage=useRef<HTMLDivElement>(null),canvas=useRef<HTMLDivElement>(null),editor=useRef<HTMLDivElement>(null),file=useRef<HTMLInputElement>(null),fileTarget=useRef(''),gesture=useRef<Gesture|null>(null),latest=useRef({edits,onChange,history});latest.current={edits,onChange,history};
   const e=edits[selected]||{},locked=!!e.locked,item=extras.find(v=>v.id===selected),full=extras.length>=100;
   const setItem=(p:Partial<ExtraElement>)=>onExtras(extras.map(v=>v.id===selected?{...v,...p}:v),edits);
@@ -37,6 +39,13 @@ export function LiveEditor({markup,width,height,edits:raw,onChange,history,child
   const remove=()=>{const next={...edits};delete next[selected];onExtras(extras.filter(v=>v.id!==selected),next);select('');};
   // The copy keeps the same geometry and pivot; only its offset differs.
   const duplicate=()=>{if(!item||full)return;const id=`custom-${crypto.randomUUID()}`;onExtras([...extras,{...item,id}],{...edits,[id]:{...e,locked:false,x:(e.x??0)+20,y:(e.y??0)+20}});select(id);};
+  // Templates of both editors share one list; the other kind is kept untouched when saving.
+  const storeTemplates=(next:LayoutTemplate[])=>{try{localStorage.setItem(TEMPLATE_KEY,JSON.stringify(next));setTemplates(next);setNotice('');}catch{setNotice('Spazio del browser esaurito: elimina un modello o un’immagine pesante.');}};
+  const mine=templates.filter(t=>t.kind===kind);
+  const saveTemplate=()=>{const name=tplName.trim().slice(0,60);if(!name)return;if(templates.length>=TEMPLATE_LIMIT){setNotice('Hai raggiunto il limite di modelli: eliminane qualcuno.');return;}
+    storeTemplates([...templates,{id:`tpl-${crypto.randomUUID()}`,name,kind,liveEdits:normalizeEdits(edits),extras:[...extras]}]);setTplName('');};
+  const applyTemplate=(t:LayoutTemplate)=>{onExtras(t.extras.map(v=>({...v})),normalizeEdits(t.liveEdits));select('');};
+  const blank=()=>{onExtras([],blankEdits(layers.map(l=>l.id),edits));select('');};
   const pickImage=(target:string)=>{fileTarget.current=target;file.current?.click();};
   const onFile=(ev:React.ChangeEvent<HTMLInputElement>)=>{const f=ev.target.files?.[0];ev.target.value='';if(!f)return;setNotice('');
     readImage(f,(src,w,h)=>{const k=Math.min(1,width*.5/w,height*.5/h);if(fileTarget.current)setItem({src});else add('image',{src,w:Math.max(10,Math.round(w*k)),h:Math.max(10,Math.round(h*k))});},()=>setNotice('Immagine non leggibile o troppo pesante: prova con un file più piccolo.'));};
@@ -92,7 +101,8 @@ export function LiveEditor({markup,width,height,edits:raw,onChange,history,child
   const number=(label:string,key:keyof ElementEdit,value:number,min:number,max:number,step=1)=><label>{label}<input type="number" value={Number(value.toFixed(2))} min={min} max={max} step={step} disabled={locked} onChange={ev=>{if(ev.target.value!==''&&Number.isFinite(ev.target.valueAsNumber))patch({[key]:Math.max(min,Math.min(max,ev.target.valueAsNumber))});}}/></label>;
   const color=(label:string,key:keyof ElementEdit,fallback:string)=><label>{label}<input type="color" value={String(e[key]??(/^#[0-9a-f]{6}$/i.test(appearance[key]||'')?appearance[key]:fallback))} disabled={locked} onChange={ev=>patch({[key]:ev.target.value})}/></label>;
   return <div className="liveEditor" ref={editor}>
-    <div className="liveToolbar" role="toolbar" aria-label="Strumenti di modifica"><b>Modifica sulla grafica</b><button onClick={history.undo} disabled={!history.canUndo} aria-label="Annulla">↶</button><button onClick={history.redo} disabled={!history.canRedo} aria-label="Ripeti">↷</button><label className="liveZoom">Zoom<select aria-label="Zoom grafica" value={zoom} onChange={ev=>setZoom(Number(ev.target.value))}>{[.5,.75,1,1.5,2,3].map(z=><option key={z} value={z}>{z===1?'Adatta':`${z*100}%`}</option>)}</select></label><label className="liveSnap"><input type="checkbox" checked={snap} onChange={ev=>setSnap(ev.target.checked)}/>Allinea</label><button onClick={()=>setPanel(v=>!v)} aria-expanded={panel}>Elementi</button><button disabled={full} onClick={()=>add('text')}>+ Testo</button><button disabled={full} onClick={()=>add('shape')}>+ Forma</button><select className="liveAdd" aria-label="Aggiungi un altro elemento" disabled={full} value="" onChange={ev=>{const kind=ev.target.value as ExtraKind;if(kind==='image')pickImage('');else if(kind)add(kind,kind==='icon'?{icon:'star'}:{});}}><option value="">+ Altro…</option>{(['ellipse','line','triangle','diamond','hexagon','star','image','icon'] as ExtraKind[]).map(k=><option key={k} value={k}>{EXTRA_KINDS[k]}</option>)}</select><input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile}/><button onClick={onAdvanced}>Avanzate</button></div>
+    <div className="liveToolbar" role="toolbar" aria-label="Strumenti di modifica"><b>Modifica sulla grafica</b><button onClick={history.undo} disabled={!history.canUndo} aria-label="Annulla">↶</button><button onClick={history.redo} disabled={!history.canRedo} aria-label="Ripeti">↷</button><label className="liveZoom">Zoom<select aria-label="Zoom grafica" value={zoom} onChange={ev=>setZoom(Number(ev.target.value))}>{[.5,.75,1,1.5,2,3].map(z=><option key={z} value={z}>{z===1?'Adatta':`${z*100}%`}</option>)}</select></label><label className="liveSnap"><input type="checkbox" checked={snap} onChange={ev=>setSnap(ev.target.checked)}/>Allinea</label><button onClick={()=>setPanel(v=>!v)} aria-expanded={panel}>Elementi</button><button disabled={full} onClick={()=>add('text')}>+ Testo</button><button disabled={full} onClick={()=>add('shape')}>+ Forma</button><select className="liveAdd" aria-label="Aggiungi un altro elemento" disabled={full} value="" onChange={ev=>{const kind=ev.target.value as ExtraKind;if(kind==='image')pickImage('');else if(kind)add(kind,kind==='icon'?{icon:'star'}:{});}}><option value="">+ Altro…</option>{(['ellipse','line','triangle','diamond','hexagon','star','image','icon'] as ExtraKind[]).map(k=><option key={k} value={k}>{EXTRA_KINDS[k]}</option>)}</select><input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile}/><button onClick={()=>setTplOpen(v=>!v)} aria-expanded={tplOpen}>Modelli</button><button onClick={onAdvanced}>Avanzate</button></div>
+    {tplOpen&&<section className="liveTemplates" aria-label="Modelli di layout"><div className="liveActions"><button onClick={blank}>Tela vuota</button><label className="liveTplName">Nome del modello<input value={tplName} maxLength={60} onChange={ev=>setTplName(ev.target.value)} onKeyDown={ev=>{if(ev.key==='Enter')saveTemplate();}}/></label><button disabled={!tplName.trim()} onClick={saveTemplate}>Salva come modello</button></div>{mine.length?<ul>{mine.map(t=><li key={t.id}><span>{t.name}</span><button aria-label={`Applica il modello ${t.name}`} onClick={()=>applyTemplate(t)}>Applica</button><button aria-label={`Elimina il modello ${t.name}`} onClick={()=>storeTemplates(templates.filter(v=>v.id!==t.id))}>Elimina</button></li>)}</ul>:<small>Nessun modello salvato. “Tela vuota” nasconde i blocchi di partenza (restano nell’elenco per ripristinarli); “Salva come modello” conserva posizioni, stili ed elementi aggiunti per riusarli su altre carte.</small>}</section>}
     {notice&&<p className="liveNotice" role="alert">{notice}</p>}
     <div className="liveBody"><div className="liveStage" ref={stage} tabIndex={0} aria-label="Area di modifica: seleziona un elemento e usa le frecce per spostarlo">
       <p className="liveHint">Tocca un blocco per modificarlo · trascina per spostarlo · usa le maniglie per dimensione e rotazione</p>
