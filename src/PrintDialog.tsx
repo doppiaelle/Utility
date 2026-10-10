@@ -1,0 +1,59 @@
+import React,{useEffect,useState} from 'react';
+import {CARD_MM,PAGES,bestTilePlan,cardSheetPlan} from './print';
+import type {PageName} from './print';
+import {summarize} from './preflight';
+import type {Issue} from './preflight';
+
+export type CardPrint={mode:'single'|'sheet';page:PageName;content:'current'|'saved'|'savedCopies'|'deck';copies:number;extraCopies:number;marks:boolean;back:'none'|'duplex'};
+export type TerrainPrint={mode:'full'|'tiles';page:PageName;overlap:number};
+type Common={onClose:()=>void};
+export type AuditReport={name:string;issues:Issue[]};
+type Props=(Common&{kind:'card';savedCount:number;savedCopies:number;deck?:{name:string;mainCopies:number;extraCount:number;distinct:number;skipped:number};audit?:(o:CardPrint)=>Promise<AuditReport[]>;onPrint:(o:CardPrint)=>Promise<void>})|(Common&{kind:'terrain';widthMm:number;heightMm:number;onPrint:(o:TerrainPrint)=>Promise<void>});
+
+const pageField=(page:PageName,set:(p:PageName)=>void)=><label>Dimensione della pagina<select aria-label="Dimensione della pagina" value={page} onChange={e=>set(e.target.value as PageName)}>{(Object.keys(PAGES) as PageName[]).map(p=><option key={p} value={p}>{p} ({PAGES[p].w}×{PAGES[p].h} mm)</option>)}</select></label>;
+
+export function PrintDialog(props:Props){
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [card,setCard]=useState<CardPrint>({mode:'sheet',page:'A4',content:props.kind==='card'&&props.deck?'deck':'current',copies:9,extraCopies:1,marks:true,back:'duplex'});
+  const [report,setReport]=useState<AuditReport[]|'running'|null>(null);
+  const [terrain,setTerrain]=useState<TerrainPrint>({mode:'tiles',page:'A4',overlap:10});
+  useEffect(()=>{const key=(ev:KeyboardEvent)=>{if(ev.key==='Escape'&&!busy)props.onClose();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[busy]);
+  const check=async()=>{if(props.kind!=='card'||!props.audit)return;setReport('running');try{setReport(await props.audit(card));}catch{setReport(null);setError('Non è stato possibile controllare le carte.');}};
+  // A small selection is checked at once; a whole collection waits for a click.
+  useEffect(()=>{setReport(null);if(props.kind==='card'&&props.audit&&(card.content==='current'||card.content==='deck'))void check();},[card.content,card.back]);
+  const run=async()=>{setBusy(true);setError('');try{if(props.kind==='card')await props.onPrint(card);else await props.onPrint(terrain);props.onClose();}catch{setError('Non è stato possibile creare il PDF. Prova con meno carte o una pagina più piccola.');}finally{setBusy(false);}};
+  let summary='',body:React.ReactNode;
+  if(props.kind==='card'){
+    const plan=cardSheetPlan(PAGES[card.page]),count=card.content==='deck'&&props.deck?props.deck.mainCopies+props.deck.extraCount*card.extraCopies:card.content==='saved'?props.savedCount:card.content==='savedCopies'?props.savedCopies:Math.max(1,card.copies),pages=Math.ceil(count/Math.max(1,plan.perPage));
+    summary=card.mode==='single'?`${card.back==='duplex'?'Due pagine (fronte e retro)':'Una pagina'} di ${CARD_MM.w}×${CARD_MM.h} mm, a misura reale.`:`${plan.perPage} carte per pagina (${plan.cols}×${plan.rows}) a misura reale: ${count} ${count===1?'carta':'carte'} su ${pages} ${pages===1?'pagina':'pagine'} ${card.page}. Stampa al 100%, senza adattare alla pagina.${card.back==='duplex'?` Con il retro le pagine diventano ${pages*2}: stampa fronte-retro ribaltando sul lato lungo.`:''}`;
+    body=<>
+      {props.deck&&<p className="printDeckNote">Mazzo «{props.deck.name}»: {props.deck.distinct} carte diverse, {props.deck.mainCopies+props.deck.extraCount*card.extraCopies} copie{props.deck.skipped?` (${props.deck.skipped} non importate, saltate)`:''}.</p>}
+      {props.deck&&props.deck.extraCount>0&&<label>Copie di ogni extra e obiettivo<input aria-label="Copie di ogni extra e obiettivo" type="number" min={1} max={4} value={card.extraCopies} onChange={e=>setCard({...card,extraCopies:Math.max(1,Math.min(4,Math.round(e.target.valueAsNumber)||1))})}/></label>}
+      {!props.deck&&<label>Formato<select aria-label="Formato" value={card.mode} onChange={e=>setCard({...card,mode:e.target.value as CardPrint['mode']})}><option value="sheet">Foglio con più carte</option><option value="single">Una carta (63×88 mm)</option></select></label>}
+      {card.mode==='single'&&<label>Retro delle carte<select aria-label="Retro delle carte" value={card.back} onChange={e=>setCard({...card,back:e.target.value as CardPrint['back']})}><option value="duplex">Aggiungi il retro (seconda pagina)</option><option value="none">Solo il fronte</option></select></label>}
+      {card.mode==='sheet'&&<>
+        {pageField(card.page,page=>setCard({...card,page}))}
+        {!props.deck&&<label>Quali carte<select aria-label="Quali carte" value={card.content} onChange={e=>setCard({...card,content:e.target.value as CardPrint['content']})}><option value="current">Questa carta, ripetuta</option><option value="saved" disabled={!props.savedCount}>Tutte le carte salvate, una copia ciascuna ({props.savedCount})</option><option value="savedCopies" disabled={!props.savedCount}>Tutte le carte salvate, con le copie previste ({props.savedCopies})</option></select></label>}
+        {card.content==='current'&&<label>Copie<input aria-label="Copie" type="number" min={1} max={200} value={card.copies} onChange={e=>setCard({...card,copies:Math.max(1,Math.min(200,Math.round(e.target.valueAsNumber)||1))})}/></label>}
+        <label>Retro delle carte<select aria-label="Retro delle carte" value={card.back} onChange={e=>setCard({...card,back:e.target.value as CardPrint['back']})}><option value="duplex">Aggiungi il retro (stampa fronte-retro)</option><option value="none">Solo il fronte</option></select></label>
+        <label className="printCheck"><input type="checkbox" checked={card.marks} onChange={e=>setCard({...card,marks:e.target.checked})}/>Segni di taglio nei margini</label>
+      </>}
+    </>;
+  }else{
+    const plan=bestTilePlan({w:props.widthMm,h:props.heightMm},PAGES[terrain.page],{overlap:terrain.overlap});
+    summary=terrain.mode==='full'?`Una pagina di ${props.widthMm}×${props.heightMm} mm, per la stampa professionale.`:`${plan.count} ${plan.count===1?'pagina':'pagine'} ${terrain.page} ${plan.landscape?'orizzontali':'verticali'} (${plan.cols}×${plan.rows}). Stampa al 100%, ritaglia i margini e incolla lungo le linee tratteggiate.`;
+    body=<>
+      <label>Formato<select aria-label="Formato" value={terrain.mode} onChange={e=>setTerrain({...terrain,mode:e.target.value as TerrainPrint['mode']})}><option value="tiles">A pagine da incollare</option><option value="full">Un unico foglio ({props.widthMm}×{props.heightMm} mm)</option></select></label>
+      {terrain.mode==='tiles'&&<>{pageField(terrain.page,page=>setTerrain({...terrain,page}))}
+        <label>Sovrapposizione per incollare (mm)<input aria-label="Sovrapposizione per incollare (mm)" type="number" min={0} max={40} value={terrain.overlap} onChange={e=>setTerrain({...terrain,overlap:Math.max(0,Math.min(40,Math.round(e.target.valueAsNumber)||0))})}/></label></>}
+    </>;
+  }
+  return <div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)props.onClose();}}>
+    <section className="settingsSheet printDialog" role="dialog" aria-modal="true" aria-label="Stampa" >
+      <div className="sheetHandle"/>
+      <header className="sheetHeader"><div><strong>Stampa in PDF</strong><small>{props.kind==='card'?'Carte pronte da tagliare':'Terreno a misura reale'}</small></div><button className="closeButton" onClick={props.onClose} disabled={busy}>Annulla</button></header>
+      <div className="settingsScroll printBody">{body}<p className="printSummary" role="status">{summary}</p>{props.kind==='card'&&props.audit&&<section className="printAudit" aria-label="Controllo prima di stampare"><div className="printAuditHead"><b>Controllo prima di stampare</b><button type="button" onClick={check} disabled={report==='running'}>{report==='running'?'Controllo…':report?'Ricontrolla':'Controlla'}</button></div>{report&&report!=='running'&&(()=>{const all=report.flatMap(r=>r.issues),t=summarize(all),withIssues=report.filter(r=>r.issues.length);let shown=0;return <><p className="printAuditSummary">Controllate {report.filter(r=>r.name!=='Retro delle carte').length} {report.filter(r=>r.name!=='Retro delle carte').length===1?'carta':'carte'}{report.some(r=>r.name==='Retro delle carte')?' e il retro':''}: {t.errors} {t.errors===1?'errore':'errori'}, {t.warnings} {t.warnings===1?'avviso':'avvisi'}{t.infos?`, ${t.infos} ${t.infos===1?'nota':'note'}`:''}. Non blocca la stampa.</p>{withIssues.length>0&&<details open={t.errors>0||all.length<=8}><summary>Dettagli</summary>{withIssues.map(r=><div key={r.name}><h5>{r.name}</h5><ul>{r.issues.filter(()=>++shown<=40).map((i,k)=><li key={k} className={i.severity}><span aria-hidden="true">{i.severity==='error'?'✕':i.severity==='warning'?'!':'i'}</span>{i.message}</li>)}</ul></div>)}{all.length>40&&<small>…e altri {all.length-40}.</small>}{all.some(i=>i.code==='text-size')&&<small className="printAuditTip">Per testi più grandi: accorcia il testo, scegli un’impostazione con più spazio (come “Molto testo”) o alza la dimensione dal pannello Avanzate.</small>}</details>}</>;})()}</section>}{error&&<p className="printError" role="alert">{error}</p>}
+        <button className="printGo" onClick={run} disabled={busy}>{busy?'Creo il PDF…':'Crea PDF'}</button></div>
+    </section>
+  </div>;
+}

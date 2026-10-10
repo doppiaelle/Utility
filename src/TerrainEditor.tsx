@@ -1,12 +1,18 @@
-import React,{useEffect,useMemo,useState}from'react';
+import React,{useEffect,useMemo,useRef,useState}from'react';
 import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras} from './liveModel';
-import type {LiveEdits,ExtraElement} from './liveModel';
+import {clearGeometry,fieldData,safeSvg} from './liveModel';
+import {THEMES} from './themes';
+import {PrintDialog} from './PrintDialog';
+import type {TerrainPrint} from './PrintDialog';
+import {rasterize,tilesPdf} from './printPdf';
+import type {Theme} from './themes';
+import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import jsPDF from'jspdf';
 import'./terrain.css';
 
-type EditorMode='card'|'terrain';
+type EditorMode='card'|'terrain'|'collection';
 type AreaPreset='rounded'|'double'|'square'|'bevel'|'octagon'|'tech';
 type SlotPreset=AreaPreset|'cut';
 
@@ -62,7 +68,7 @@ type TerrainLayout={
 };
 
 type TerrainState={
-  liveEdits?:LiveEdits;extras?:ExtraElement[];
+  liveEdits?:LiveEdits;extras?:ExtraElement[];look?:string;
   id:string;
   name:string;
   printWidthMm:number;
@@ -150,6 +156,33 @@ const esc=(s:any)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 const fontStack=(f:string)=>FONT_STACKS[f]||FONT_STACKS.Arial;
 const labelText=(s:string,uppercase:boolean)=>uppercase?s.toUpperCase():s;
 const deepClone=<T,>(x:T):T=>JSON.parse(JSON.stringify(x));
+const TERRAIN_LAYOUTS=[
+  {id:'duel',label:'Duello classico',note:'Due aree di slot in alto, fila centrale e zone mazzo, cimitero ed extra'},
+  {id:'essential',label:'Essenziale',note:'Solo gli slot, senza pannelli né linee guida'},
+  {id:'compact',label:'Compatto',note:'Margini e spazi ridotti per slot più grandi'},
+  {id:'campaign',label:'Zona centrale',note:'Una sola fila grande al centro, per scenari o per un giocatore'}
+];
+/** Every look starts from the defaults for what layouts control, then applies its own changes. */
+function applyTerrainLayout(state:TerrainState,id:string):TerrainState{
+  const d=deepClone(DEFAULT_TERRAIN),s=deepClone(state);
+  s.layout=d.layout;s.guide.enabled=d.guide.enabled;s.deckEnabled=s.graveEnabled=s.extraEnabled=true;
+  for(const k of ['topLeftPanel','topRightPanel','lowerPanel'] as const)Object.assign(s[k],{enabled:d[k].enabled,fillEnabled:d[k].fillEnabled,borderEnabled:d[k].borderEnabled,detailEnabled:d[k].detailEnabled});
+  for(const k of ['topLeftGroup','topRightGroup'] as const)Object.assign(s[k],{enabled:true,scale:1,gap:1,offsetX:0,offsetY:0});
+  Object.assign(s.centerGroup,{enabled:true,scale:1,gap12:1,gap23:1,offsetX:0,offsetY:0});
+  if(id==='essential'){s.guide.enabled=false;/* the panels stay (the slots live in them) but draw nothing */for(const k of ['topLeftPanel','topRightPanel','lowerPanel'] as const)Object.assign(s[k],{fillEnabled:false,borderEnabled:false,detailEnabled:false});}
+  else if(id==='compact')s.layout={...s.layout,edgeInsetX:14,edgeInsetY:8,contentPaddingX:14,contentPaddingTop:20,contentPaddingBottom:56,topGapX:34,rowGap:22};
+  else if(id==='campaign'){s.topLeftGroup.enabled=s.topRightGroup.enabled=false;s.topLeftPanel.enabled=s.topRightPanel.enabled=false;s.layout={...s.layout,topLeftHeight:120,topRightHeight:120};s.centerGroup.scale=1.15;}
+  s.look=id;return s;
+}
+function applyTerrainTheme(state:TerrainState,t:Theme):TerrainState{
+  const s=deepClone(state),c=t.terrain;
+  const area=(a:AreaStyle,fill:string,border=c.border)=>{a.fillColor=fill;a.borderColor=border;a.accentColor=c.accent;};
+  const slot=(x:SlotStyle)=>{x.fillColor=c.bg;x.borderColor=c.border;x.accentColor=c.accent;};
+  s.backgroundColor=c.bg;s.textColor=c.text;
+  area(s.outer,c.bg);area(s.inner,c.inner);area(s.guide,c.inner,c.accent);area(s.topLeftPanel,c.panel);area(s.topRightPanel,c.panel);area(s.lowerPanel,c.panel);
+  for(const g of [s.topLeftGroup,s.topRightGroup,s.centerGroup]){slot(g.style);for(const o of g.slots)if(!o.custom)slot(o.style);}
+  slot(s.utilityStyle);return s;
+}
 
 const pathRounded=(x:number,y:number,w:number,h:number,r:number)=>{
   const q=clamp(r,0,Math.min(w,h)/2);
@@ -214,7 +247,7 @@ function normalizeTerrain(input:any):TerrainState{
   const legacyPanel=(fallback:AreaStyle):AreaStyle=>({...fallback,preset:legacy.panelPreset||fallback.preset,fillColor:legacy.panelColor||fallback.fillColor,borderColor:legacy.borderColor||fallback.borderColor,accentColor:legacy.accentColor||fallback.accentColor,borderWidth:legacy.panelWidth??fallback.borderWidth,radius:legacy.panelRadius??fallback.radius,borderOpacity:legacy.panelOpacity??fallback.borderOpacity});
   const topFallback:FourSlotGroup={...DEFAULT_TERRAIN.topLeftGroup,scale:legacy.slotScale??1,gap:legacy.slotGap??1,style:legacySlot,slots:makeFourSlots()};
   const centerFallback:CenterSlotGroup={...DEFAULT_TERRAIN.centerGroup,scale:legacy.slotScale??1,gap12:legacy.slotGap??1,gap23:legacy.slotGap??1,style:legacySlot,slots:makeThreeSlots()};
-  return{liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),
+  return{liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),look:TERRAIN_LAYOUTS.some(l=>l.id===legacy.look)?legacy.look:'duel',
     id:String(legacy.id||DEFAULT_TERRAIN.id),name:String(legacy.name||DEFAULT_TERRAIN.name),
     printWidthMm:clamp(Number(legacy.printWidthMm)||610,200,1200),printHeightMm:clamp(Number(legacy.printHeightMm)||350,150,800),
     backgroundColor:legacy.backgroundColor||legacy.outerColor||DEFAULT_TERRAIN.backgroundColor,textColor:legacy.textColor||DEFAULT_TERRAIN.textColor,sheenEnabled:legacy.sheenEnabled!==false,
@@ -329,9 +362,13 @@ function terrainSvg(state:TerrainState){
   const groups=`${leftPanel?renderFour(state.topLeftGroup,leftPanel,'topLeftGroup'):''}${rightPanel?renderFour(state.topRightGroup,rightPanel,'topRightGroup'):''}${utilityAndCenter}`;
   const sheenRect=shell?.rect||base,sheenStyle=shell?.style;
   const sheenPath=shapePath(sheenStyle?.preset||'rounded',sheenRect.x,sheenRect.y,sheenRect.w,sheenRect.h,sheenStyle?.radius||28);
-  return applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs><filter id="terrainShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity=".42"/></filter><linearGradient id="terrainSheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".035"/><stop offset=".45" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient></defs>${editable('background','Superficie di fondo',`<rect width="${W}" height="${H}" fill="${state.backgroundColor}"/>`)}<g filter="url(#terrainShadow)">${onionMarkup}${panels}${groups}${state.sheenEnabled?`<path d="${sheenPath}" fill="url(#terrainSheen)" pointer-events="none"/>`:''}</g>${renderExtras(state.extras)}</svg>`,state.liveEdits);
+  return safeSvg(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs><filter id="terrainShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity=".42"/></filter><linearGradient id="terrainSheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".035"/><stop offset=".45" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".10"/></linearGradient></defs>${editable('background','Superficie di fondo',`<rect width="${W}" height="${H}" fill="${state.backgroundColor}"/>`)}<g filter="url(#terrainShadow)">${onionMarkup}${panels}${groups}${state.sheenEnabled?`<path d="${sheenPath}" fill="url(#terrainSheen)" pointer-events="none"/>`:''}</g>${renderExtras(state.extras,fieldData(terrainFields(state)))}</svg>`,state.liveEdits));
 }
 
+/** The terrain draft as a small picture for the collection overview. */
+export function terrainPreview():{name:string;thumb:string}|null{
+  try{const raw=localStorage.getItem('kritoma.terrain');if(!raw)return null;const state=normalizeTerrain(JSON.parse(raw));return{name:state.name,thumb:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(terrainSvg(state))};}catch{return null;}
+}
 function download(name:string,blob:Blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
 function RangeField({label,value,min,max,step=1,onChange,suffix=''}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void;suffix?:string}){return <label className="rangeField"><span><span>{label}</span><b>{Number.isInteger(step)?Math.round(value):value.toFixed(step<.1?2:1)}{suffix}</b></span><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))}/></label>}
 function OpacityField({label,value,onChange}:{label:string;value:number;onChange:(v:number)=>void}){return <RangeField label={label} value={value*100} min={0} max={100} onChange={v=>onChange(v/100)} suffix="%"/>}
@@ -350,32 +387,49 @@ function SlotOverrideEditor({title,value,base,onChange}:{title:string;value:Slot
   return <div className="terrainSlotOverride"><div className="terrainSubHeader"><b>{title}</b><span>{value.enabled?(value.custom?'personalizzato':'eredita gruppo'):'nascosto'}</span></div><div className="terrainToggleGrid"><ToggleField label="Mostra slot" checked={value.enabled} onChange={v=>onChange({...value,enabled:v})}/><ToggleField label="Personalizza" checked={value.custom} onChange={v=>onChange({...value,custom:v,style:v?value.style:{...base}})}/></div>{value.enabled&&value.custom&&<SlotStyleEditor title={`${title} · stile`} value={value.style} onChange={style=>onChange({...value,style})}/>}</div>;
 }
 
-export function EditorSwitcher({current,onCard,onTerrain}:{current:EditorMode;onCard:()=>void;onTerrain:()=>void}){const[open,setOpen]=useState(false);const choose=(mode:EditorMode)=>{setOpen(false);mode==='card'?onCard():onTerrain()};return <div className="editorSwitcher"><button className="brand brandButton" onClick={()=>setOpen(v=>!v)} aria-haspopup="menu" aria-expanded={open}><span className="brandMark">K</span><div><strong>Kritoma</strong><small>{current==='card'?'Editor carta':'Editor terreno'} · cambia ▾</small></div></button>{open&&<div className="editorSwitcherMenu" role="menu"><button className={current==='card'?'active':''} onClick={()=>choose('card')}><span>▣</span><div><b>Editor carta</b><small>Carte, rarità, foil e layout</small></div></button><button className={current==='terrain'?'active':''} onClick={()=>choose('terrain')}><span>▤</span><div><b>Editor terreno</b><small>Playmat, slot, bordi e colori</small></div></button></div>}</div>}
+export function EditorSwitcher({current,onCard,onTerrain,onCollection}:{current:EditorMode;onCard:()=>void;onTerrain:()=>void;onCollection?:()=>void}){const[open,setOpen]=useState(false);const choose=(mode:EditorMode)=>{setOpen(false);mode==='card'?onCard():mode==='terrain'?onTerrain():onCollection?.()};return <div className="editorSwitcher"><button className="brand brandButton" onClick={()=>setOpen(v=>!v)} aria-haspopup="menu" aria-expanded={open}><span className="brandMark">K</span><div><strong>Kritoma</strong><small>{current==='card'?'Editor carta':current==='terrain'?'Editor terreno':'Raccolta'} · cambia ▾</small></div></button>{open&&<div className="editorSwitcherMenu" role="menu"><button className={current==='card'?'active':''} onClick={()=>choose('card')}><span>▣</span><div><b>Editor carta</b><small>Carte, rarità, foil e layout</small></div></button><button className={current==='terrain'?'active':''} onClick={()=>choose('terrain')}><span>▤</span><div><b>Editor terreno</b><small>Playmat, slot, bordi e colori</small></div></button><button className={current==='collection'?'active':''} onClick={()=>choose('collection')}><span>▦</span><div><b>Raccolta</b><small>Bozze, mazzi e carte salvate</small></div></button></div>}</div>}
 
-export default function TerrainEditor({onSwitchToCard}:{onSwitchToCard:()=>void}){
-  const history=useHistory<TerrainState>(()=>{try{return normalizeTerrain(JSON.parse(localStorage.getItem('kritoma.terrain')||'null'))}catch{return deepClone(DEFAULT_TERRAIN)}}),state=history.value,setState=history.set,[settingsOpen,setSettingsOpen]=useState(false),[saveError,setSaveError]=useState('');
+const terrainFields=(t:TerrainState):DataField[]=>[{key:'name',label:'Nome del terreno',value:t.name},{key:'size',label:'Dimensioni di stampa',value:`${t.printWidthMm}×${t.printHeightMm} mm`},{key:'id',label:'Codice terreno',value:t.id}];
+export default function TerrainEditor({onSwitchToCard,onSwitchToCollection}:{onSwitchToCard:()=>void;onSwitchToCollection:()=>void}){
+  const history=useHistory<TerrainState>(()=>{try{return normalizeTerrain(JSON.parse(localStorage.getItem('kritoma.terrain')||'null'))}catch{return deepClone(DEFAULT_TERRAIN)}}),state=history.value,setState=history.set,[settingsOpen,setSettingsOpen]=useState(false),[saveError,setSaveError]=useState(''),[printOpen,setPrintOpen]=useState(false),[toast,setToast]=useState(''),toastTimer=useRef(0);
   useEffect(()=>{try{localStorage.setItem('kritoma.terrain',JSON.stringify(state));setSaveError('')}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.')}},[state]);
   const markup=useMemo(()=>terrainSvg(state),[state]);
+  // Thumbnails depend on the look only, not on every drag of a block.
+  const lookKey=JSON.stringify({...state,liveEdits:undefined,extras:undefined,look:undefined});
+  const layoutThumbs=useMemo(()=>TERRAIN_LAYOUTS.map(l=>({...l,thumb:terrainSvg(normalizeTerrain({...applyTerrainLayout(state,l.id),liveEdits:{},extras:[]}))})),[lookKey]);
+  const gallery={layoutTitle:'Impostazione del terreno',active:state.look??'duel',layouts:layoutThumbs,themes:THEMES.map(t=>({id:t.id,label:t.label,colors:t.colors})),
+    onLayout:(id:string)=>setState(s=>normalizeTerrain({...applyTerrainLayout(s,id),liveEdits:clearGeometry(s.liveEdits)})),
+    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)setState(s=>normalizeTerrain(applyTerrainTheme(s,t)));},
+    onSurprise:(o:{keepLayout:boolean;keepTheme:boolean})=>setState(s=>{
+      let next=s;
+      if(!o.keepLayout){const ids=TERRAIN_LAYOUTS.map(l=>l.id).filter(id=>id!==(s.look??'duel'));next={...applyTerrainLayout(next,ids[Math.floor(Math.random()*ids.length)]),liveEdits:clearGeometry(s.liveEdits)};}
+      if(!o.keepTheme){const rest=THEMES.filter(t=>t.terrain.bg.toLowerCase()!==s.backgroundColor.toLowerCase());next=applyTerrainTheme(next,rest[Math.floor(Math.random()*rest.length)]);}
+      return normalizeTerrain(next);
+    })};
   const update=<K extends keyof TerrainState>(key:K,value:TerrainState[K])=>setState(s=>normalizeTerrain({...s,[key]:value}));
   const updateArea=(key:'outer'|'inner'|'guide'|'topLeftPanel'|'topRightPanel'|'lowerPanel',value:AreaStyle)=>setState(s=>({...s,[key]:value}));
   const updateFourGroup=(key:'topLeftGroup'|'topRightGroup',value:FourSlotGroup)=>setState(s=>({...s,[key]:value}));
   const updateCenter=(value:CenterSlotGroup)=>setState(s=>({...s,centerGroup:value}));
   const updateLayout=(patch:Partial<TerrainLayout>)=>update('layout',{...state.layout,...patch});
-  const save=()=>{try{localStorage.setItem('kritoma.terrain',JSON.stringify(state));setSaveError('')}catch{setSaveError('Salvataggio non riuscito: esporta il progetto prima di chiudere.')}};
+  const save=()=>{try{localStorage.setItem('kritoma.terrain',JSON.stringify(state));setSaveError('');setToast(`Terreno «${state.name}» salvato. Si salva comunque da solo a ogni modifica.`);window.clearTimeout(toastTimer.current);toastTimer.current=window.setTimeout(()=>setToast(''),4000);}catch{setSaveError('Salvataggio non riuscito: esporta il progetto prima di chiudere.')}};
   const exportSvg=()=>download(`${state.id}.svg`,new Blob([markup],{type:'image/svg+xml'}));
   const raster=(cb:(canvas:HTMLCanvasElement)=>void)=>{const u=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'})),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=4800;c.height=2760;c.getContext('2d')!.drawImage(im,0,0,c.width,c.height);cb(c);URL.revokeObjectURL(u)};im.src=u};
   const exportPng=()=>raster(c=>c.toBlob(b=>b&&download(`${state.id}.png`,b),'image/png'));
   const exportPdf=()=>raster(c=>{const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:[state.printWidthMm,state.printHeightMm]});pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,state.printWidthMm,state.printHeightMm);pdf.save(`${state.id}-print.pdf`)});
+  const printTerrain=async(o:TerrainPrint)=>{
+    if(o.mode==='full'){exportPdf();return;}
+    const canvas=await rasterize(markup,4800,2760);
+    tilesPdf(canvas,{w:state.printWidthMm,h:state.printHeightMm},{page:o.page,overlap:o.overlap}).save(`${state.id}-pagine.pdf`);
+  };
   const reset=()=>setState(deepClone(DEFAULT_TERRAIN));
   const renderFourGroupEditor=(title:string,key:'topLeftGroup'|'topRightGroup')=>{const group=state[key];const set=(patch:Partial<FourSlotGroup>)=>updateFourGroup(key,{...group,...patch});return <><ToggleField label={`Mostra ${title.toLowerCase()}`} checked={group.enabled} onChange={enabled=>set({enabled})}/>{group.enabled&&<><SlotStyleEditor title="Stile base dei 4 slot" value={group.style} onChange={style=>set({style})}/><div className="terrainLayoutGrid"><RangeField label="Dimensione degli spazi" value={group.scale} min={.72} max={1.22} step={.01} onChange={scale=>set({scale})} suffix="×"/><RangeField label="Spaziatura" value={group.gap} min={.5} max={2} step={.01} onChange={gap=>set({gap})} suffix="×"/><RangeField label="Sposta a destra / sinistra" value={group.offsetX} min={-120} max={120} onChange={offsetX=>set({offsetX})}/><RangeField label="Sposta in alto / basso" value={group.offsetY} min={-90} max={90} onChange={offsetY=>set({offsetY})}/></div>{group.slots.map((slot,i)=><SlotOverrideEditor key={i} title={`Slot ${i+1}`} value={slot} base={group.style} onChange={next=>{const slots=[...group.slots] as FourSlotGroup['slots'];slots[i]=next;set({slots})}}/>)}</>}</>};
-  return <div className="appShell terrainShell"><header className="topBar"><EditorSwitcher current="terrain" onCard={onSwitchToCard} onTerrain={()=>{}}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni terreno"><span>☰</span><b>Avanzate</b></button></header>{saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}<LiveEditor markup={markup} width={1600} height={920} edits={state.liveEdits} onChange={liveEdits=>update('liveEdits',liveEdits)} history={history} onAdd={kind=>{const id=`custom-${crypto.randomUUID()}`;update('extras',[...(state.extras||[]),{id,kind,text:'Nuovo testo',x:500,y:420,w:180,h:80}]);return id;}} onDelete={id=>{const liveEdits={...state.liveEdits};delete liveEdits[id];setState({...state,extras:state.extras?.filter(v=>v.id!==id),liveEdits});}} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
-    if(id.startsWith('custom-')){const item=state.extras?.find(v=>v.id===id);return item?.kind==='text'?<label>Testo libero<textarea aria-label="Testo libero" value={item.text} onChange={e=>update('extras',state.extras?.map(v=>v.id===id?{...v,text:e.target.value}:v))}/></label>:null;}
+  return <div className="appShell terrainShell"><header className="topBar"><EditorSwitcher current="terrain" onCard={onSwitchToCard} onTerrain={()=>{}} onCollection={onSwitchToCollection}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni terreno"><span>☰</span><b>Avanzate</b></button></header>{saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}{toast&&<div className="saveToast" aria-live="polite">{toast}</div>}<LiveEditor kind="terrain" gallery={gallery} unitMm={state.printWidthMm/1600} gridMm={20} safeMm={10} fields={terrainFields(state)} markup={markup} width={1600} height={920} edits={state.liveEdits} onChange={liveEdits=>update('liveEdits',liveEdits)} history={history} extras={state.extras} onExtras={(extras,liveEdits)=>setState(s=>normalizeTerrain({...s,extras,liveEdits}))} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
     if(id==='background')return <ColorField label="Colore superficie" value={state.backgroundColor} onChange={v=>update('backgroundColor',v)}/>;
     if(['deck','grave','extra'].includes(id)){const key=(id==='deck'?'deckLabel':id==='grave'?'graveLabel':'extraLabel') as 'deckLabel'|'graveLabel'|'extraLabel';return <label>Nome dello spazio<textarea aria-label="Nome dello spazio" value={state[key]} onChange={e=>update(key,e.target.value)}/></label>;}
     if(['outer','inner','guide','topLeftPanel','topRightPanel','lowerPanel'].includes(id)){const key=id as 'outer';return <details><summary>Forma e linee dell’area</summary><AreaEditor title="Forma e dettagli dell’area" value={state[key]} onChange={v=>updateArea(key,v)}/></details>;}
     const [groupKey,index]=id.split('-');if(['topLeftGroup','topRightGroup','centerGroup'].includes(groupKey)){const key=groupKey as 'topLeftGroup',group=state[key],i=Number(index),slot=group.slots[i];if(slot)return <details><summary>Forma e linee dello spazio</summary><SlotStyleEditor title="Aspetto di questo spazio" value={effectiveSlot(group.style,slot)} onChange={style=>{const slots=[...group.slots] as FourSlotGroup['slots'];slots[i]={...slot,custom:true,style};update(key,{...group,slots});}}/></details>;}
     return <small>Personalizza questo elemento con i controlli sotto.</small>;
-  }}</LiveEditor><nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>setSettingsOpen(true)}>Impostazioni</button><button onClick={exportPng}>PNG</button><button onClick={exportPdf}>PDF</button></nav>{settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni terreno"><div className="sheetHandle"/><header className="sheetHeader"><div><strong>Impostazioni terreno</strong><small>Strati, macro aree e slot modificabili separatamente</small></div><button className="closeButton" onClick={()=>setSettingsOpen(false)}>Fatto</button></header><div className="settingsScroll">
+  }}</LiveEditor><nav className="bottomDock"><button onClick={save}>Salva</button><button onClick={()=>setSettingsOpen(true)}>Impostazioni</button><button onClick={exportPng}>PNG</button><button onClick={()=>setPrintOpen(true)}>PDF</button></nav>{printOpen&&<PrintDialog kind="terrain" widthMm={state.printWidthMm} heightMm={state.printHeightMm} onClose={()=>setPrintOpen(false)} onPrint={printTerrain}/>}{settingsOpen&&<div className="sheetBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settingsSheet" role="dialog" aria-modal="true" aria-label="Impostazioni terreno"><div className="sheetHandle"/><header className="sheetHeader"><div><strong>Impostazioni terreno</strong><small>Strati, macro aree e slot modificabili separatamente</small></div><button className="closeButton" onClick={()=>setSettingsOpen(false)}>Fatto</button></header><div className="settingsScroll">
 
     <details className="settingsGroup" open><summary><span><b>Terreno</b><small>Identità, formato e superficie di fondo</small></span><i>›</i></summary><div className="settingsBody"><label>Nome<input value={state.name} onChange={e=>update('name',e.target.value)}/></label><label>ID file<input value={state.id} onChange={e=>update('id',e.target.value)}/></label><div className="fieldGrid"><label>Larghezza stampa (mm)<input type="number" min="200" max="1200" value={state.printWidthMm} onChange={e=>update('printWidthMm',Number(e.target.value))}/></label><label>Altezza stampa (mm)<input type="number" min="150" max="800" value={state.printHeightMm} onChange={e=>update('printHeightMm',Number(e.target.value))}/></label></div><ColorField label="Colore superficie di fondo" value={state.backgroundColor} onChange={v=>update('backgroundColor',v)}/><ToggleField label="Riflesso sulla superficie" help="Leggera luce diagonale sul playmat." checked={state.sheenEnabled} onChange={v=>update('sheenEnabled',v)}/><button className="secondary wideButton" onClick={reset}>Ripristina terreno base</button></div></details>
 
@@ -395,7 +449,7 @@ export default function TerrainEditor({onSwitchToCard}:{onSwitchToCard:()=>void}
 
     <details className="settingsGroup"><summary><span><b>Tipografia</b><small>Font delle etichette del terreno</small></span><i>›</i></summary><div className="settingsBody"><ColorField label="Colore testo" value={state.textColor} onChange={v=>update('textColor',v)}/><label>Font<select value={state.labelFont} onChange={e=>update('labelFont',e.target.value)}>{FONT_OPTIONS.map(f=><option key={f} value={f}>{f}</option>)}</select></label><RangeField label="Grandezza del testo" value={state.labelSize} min={8} max={32} onChange={v=>update('labelSize',v)} suffix=" pt"/><RangeField label="Spessore del testo" value={state.labelWeight} min={300} max={900} step={100} onChange={v=>update('labelWeight',v)}/><RangeField label="Spaziatura lettere" value={state.letterSpacing} min={0} max={8} step={.1} onChange={v=>update('letterSpacing',v)} suffix=" px"/><ToggleField label="Maiuscolo automatico" help="Uniforma le etichette del terreno." checked={state.uppercase} onChange={v=>update('uppercase',v)}/></div></details>
 
-    <details className="settingsGroup"><summary><span><b>Esporta</b><small>SVG vettoriale, PNG e PDF stampa</small></span><i>›</i></summary><div className="settingsBody exportGrid"><button onClick={save}>Salva cache</button><button onClick={exportSvg}>SVG</button><button onClick={exportPng}>PNG HQ</button><button onClick={exportPdf}>PDF stampa</button></div></details>
+    <details className="settingsGroup"><summary><span><b>Esporta</b><small>SVG vettoriale, PNG e PDF stampa</small></span><i>›</i></summary><div className="settingsBody exportGrid"><button onClick={save}>Salva cache</button><button onClick={exportSvg}>SVG</button><button onClick={exportPng}>PNG HQ</button><button onClick={()=>setPrintOpen(true)}>PDF di stampa…</button></div></details>
 
   </div></section></div>}</div>;
 }
