@@ -80,3 +80,29 @@ test('blank canvas and layout templates are reusable and persist',async({page})=
  await page.reload();await page.getByRole('button',{name:'Modelli',exact:true}).click();await expect(page.getByRole('button',{name:'Applica il modello Solo forma'})).toBeVisible();
  await page.getByRole('button',{name:'Elimina il modello Solo forma'}).click();await expect(page.getByRole('button',{name:'Applica il modello Solo forma'})).toHaveCount(0);expect(errors).toEqual([]);
 });
+
+test('multi-selection aligns, distributes and moves together; layers reorder',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const x=async(i:number)=>{const t=await page.locator('.liveArtwork [data-live-id^=custom-]').nth(i).getAttribute('transform');return Number(/translate\((-?[\d.]+) /.exec(t||'')?.[1]??'NaN');};
+ for(const offset of[-200,-50,120]){await page.getByRole('button',{name:'+ Forma',exact:true}).click();await page.getByLabel('Sposta a destra / sinistra',{exact:true}).fill(String(offset));}
+ await page.getByText('Livelli',{exact:true}).click();
+ await page.getByRole('button',{name:'Forma aggiunta 1',exact:true}).click();
+ await page.getByRole('button',{name:'Forma aggiunta 2',exact:true}).click({modifiers:['Shift']});
+ await page.getByRole('button',{name:'Forma aggiunta 3',exact:true}).click({modifiers:['Shift']});
+ await expect(page.getByText('3 elementi selezionati')).toBeVisible();
+ await page.getByRole('button',{name:'Distribuisci ↔',exact:true}).click();
+ expect(Math.abs(await x(1)-(-40))).toBeLessThan(1);expect(Math.abs(await x(0)+200)).toBeLessThan(1);expect(Math.abs(await x(2)-120)).toBeLessThan(1);
+ await page.getByRole('button',{name:'Allinea a sinistra',exact:true}).click();
+ const lefts=await Promise.all([0,1,2].map(async i=>(await page.locator('.liveArtwork [data-live-id^=custom-]').nth(i).boundingBox())!.x));
+ expect(Math.max(...lefts)-Math.min(...lefts)).toBeLessThan(1.5);
+ const before=await x(2),box=(await page.locator('.liveArtwork [data-live-id^=custom-]').nth(0).boundingBox())!;
+ await drag(page,{x:box.x+box.width/2,y:box.y+box.height/2},{x:box.x+box.width/2+20,y:box.y+box.height/2+8},!!isMobile);
+ expect(Math.abs(await x(2)-before)).toBeGreaterThan(5);
+ await page.getByRole('button',{name:'Elimina',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(0);
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id^=custom-]')).toHaveCount(3);
+ const names=()=>page.locator('.liveLayers .liveLayerName').allTextContents();
+ const order=await names();const i=order.indexOf('Forma aggiunta 3');
+ await page.getByRole('button',{name:'Porta indietro: Forma aggiunta 3',exact:true}).click();
+ const after=await names();expect(after.indexOf('Forma aggiunta 3')).toBe(i+1);
+ expect(await page.locator('.liveArtwork [data-live-id^=custom-]').evaluateAll(n=>n.map(v=>v.getAttribute('data-live-label')))).toEqual(['Forma aggiunta 1','Forma aggiunta 3','Forma aggiunta 2']);expect(errors).toEqual([]);
+});
