@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {applyEdits,blankEdits,buildBackup,fieldData,parseBackup,safeSvg,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
+import {THEMES} from '../src/themes.ts';
+import {applyEdits,blankEdits,buildBackup,clearGeometry,fieldData,parseBackup,safeSvg,normalizeEdits,normalizeExtras,normalizeTemplates,renderExtras,removeIndexedEdits} from '../src/liveModel.ts';
 const {window}=new JSDOM();globalThis.DOMParser=window.DOMParser;globalThis.XMLSerializer=window.XMLSerializer;
 const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml');
 const source='<svg xmlns="http://www.w3.org/2000/svg"><defs/><g data-live-id="area"><rect width="100" height="50" rx="4" fill="#fff" stroke="#111"/><text>A</text><g data-live-id="title"><text fill="#222">B</text></g></g><g data-live-id="slot"><path fill="#fff"/></g><path id="overlay"/></svg>';
@@ -79,4 +80,16 @@ test('image boxes remember their pixel size, rejecting nonsense values',()=>{
  const png='data:image/png;base64,iVBORw0KGgo=';
  const [a,b,c]=normalizeExtras([{id:'custom-a',kind:'image',src:png,nw:1200.4,nh:800,x:0,y:0,w:10,h:10},{id:'custom-b',kind:'image',src:png,nw:-5,nh:Infinity,x:0,y:0,w:10,h:10},{id:'custom-c',kind:'ellipse',nw:10,nh:10,x:0,y:0,w:10,h:10}]);
  assert.deepEqual([a.nw,a.nh],[1200,800]);assert.deepEqual([b.nw,b.nh],[undefined,undefined]);assert.equal('nw' in c,false);
+});
+
+test('changing layout drops hand-placed geometry but keeps colours, text styling and visibility',()=>{
+ const result=clearGeometry({title:{x:40,y:2,sx:1.5,sy:1.2,rotation:10,cx:5,cy:6,order:2,fill:'#123456',hidden:true},cost:{x:9},frame:{locked:true,fontSize:20},bad:'x'});
+ assert.deepEqual(result,{title:{fill:'#123456',hidden:true},frame:{locked:true,fontSize:20}});
+ assert.deepEqual(clearGeometry(undefined),{});
+});
+test('themes are well formed: unique ids, valid colours and known presets',()=>{
+ const hex=/^#[0-9a-f]{6}$/i,frames=['rounded','double','shield','arch','square','bevel','octagon','tech','offset','broken','wave'],accents=['corners','filigree','ribbons','waves','slashes','circuit','runes','orbits','spines','fragments','minimal','none'],fonts=['Arial','Inter','Trebuchet MS','Verdana','Georgia','Impact','Courier New'];
+ assert.equal(new Set(THEMES.map(t=>t.id)).size,THEMES.length);assert.ok(THEMES.length>=6);
+ for(const t of THEMES){assert.ok(t.label);assert.equal(t.colors.length,3);for(const c of [...t.colors,t.card.scopeColor,...Object.values(t.terrain)])assert.match(c,hex,t.id);
+  assert.ok(frames.includes(t.card.framePreset),t.id);assert.ok(accents.includes(t.card.accentPreset),t.id);assert.ok(fonts.includes(t.card.titleFont)&&fonts.includes(t.card.textFont),t.id);}
 });

@@ -1,7 +1,9 @@
 import React,{useEffect,useMemo,useState}from'react';
 import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras} from './liveModel';
-import {fieldData,safeSvg} from './liveModel';
+import {clearGeometry,fieldData,safeSvg} from './liveModel';
+import {THEMES} from './themes';
+import type {Theme} from './themes';
 import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import jsPDF from'jspdf';
@@ -63,7 +65,7 @@ type TerrainLayout={
 };
 
 type TerrainState={
-  liveEdits?:LiveEdits;extras?:ExtraElement[];
+  liveEdits?:LiveEdits;extras?:ExtraElement[];look?:string;
   id:string;
   name:string;
   printWidthMm:number;
@@ -151,6 +153,33 @@ const esc=(s:any)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 const fontStack=(f:string)=>FONT_STACKS[f]||FONT_STACKS.Arial;
 const labelText=(s:string,uppercase:boolean)=>uppercase?s.toUpperCase():s;
 const deepClone=<T,>(x:T):T=>JSON.parse(JSON.stringify(x));
+const TERRAIN_LAYOUTS=[
+  {id:'duel',label:'Duello classico',note:'Due aree di slot in alto, fila centrale e zone mazzo, cimitero ed extra'},
+  {id:'essential',label:'Essenziale',note:'Solo gli slot, senza pannelli né linee guida'},
+  {id:'compact',label:'Compatto',note:'Margini e spazi ridotti per slot più grandi'},
+  {id:'campaign',label:'Zona centrale',note:'Una sola fila grande al centro, per scenari o per un giocatore'}
+];
+/** Every look starts from the defaults for what layouts control, then applies its own changes. */
+function applyTerrainLayout(state:TerrainState,id:string):TerrainState{
+  const d=deepClone(DEFAULT_TERRAIN),s=deepClone(state);
+  s.layout=d.layout;s.guide.enabled=d.guide.enabled;s.deckEnabled=s.graveEnabled=s.extraEnabled=true;
+  for(const k of ['topLeftPanel','topRightPanel','lowerPanel'] as const)Object.assign(s[k],{enabled:d[k].enabled,fillEnabled:d[k].fillEnabled,borderEnabled:d[k].borderEnabled,detailEnabled:d[k].detailEnabled});
+  for(const k of ['topLeftGroup','topRightGroup'] as const)Object.assign(s[k],{enabled:true,scale:1,gap:1,offsetX:0,offsetY:0});
+  Object.assign(s.centerGroup,{enabled:true,scale:1,gap12:1,gap23:1,offsetX:0,offsetY:0});
+  if(id==='essential'){s.guide.enabled=false;/* the panels stay (the slots live in them) but draw nothing */for(const k of ['topLeftPanel','topRightPanel','lowerPanel'] as const)Object.assign(s[k],{fillEnabled:false,borderEnabled:false,detailEnabled:false});}
+  else if(id==='compact')s.layout={...s.layout,edgeInsetX:14,edgeInsetY:8,contentPaddingX:14,contentPaddingTop:20,contentPaddingBottom:56,topGapX:34,rowGap:22};
+  else if(id==='campaign'){s.topLeftGroup.enabled=s.topRightGroup.enabled=false;s.topLeftPanel.enabled=s.topRightPanel.enabled=false;s.layout={...s.layout,topLeftHeight:120,topRightHeight:120};s.centerGroup.scale=1.15;}
+  s.look=id;return s;
+}
+function applyTerrainTheme(state:TerrainState,t:Theme):TerrainState{
+  const s=deepClone(state),c=t.terrain;
+  const area=(a:AreaStyle,fill:string,border=c.border)=>{a.fillColor=fill;a.borderColor=border;a.accentColor=c.accent;};
+  const slot=(x:SlotStyle)=>{x.fillColor=c.bg;x.borderColor=c.border;x.accentColor=c.accent;};
+  s.backgroundColor=c.bg;s.textColor=c.text;
+  area(s.outer,c.bg);area(s.inner,c.inner);area(s.guide,c.inner,c.accent);area(s.topLeftPanel,c.panel);area(s.topRightPanel,c.panel);area(s.lowerPanel,c.panel);
+  for(const g of [s.topLeftGroup,s.topRightGroup,s.centerGroup]){slot(g.style);for(const o of g.slots)if(!o.custom)slot(o.style);}
+  slot(s.utilityStyle);return s;
+}
 
 const pathRounded=(x:number,y:number,w:number,h:number,r:number)=>{
   const q=clamp(r,0,Math.min(w,h)/2);
@@ -215,7 +244,7 @@ function normalizeTerrain(input:any):TerrainState{
   const legacyPanel=(fallback:AreaStyle):AreaStyle=>({...fallback,preset:legacy.panelPreset||fallback.preset,fillColor:legacy.panelColor||fallback.fillColor,borderColor:legacy.borderColor||fallback.borderColor,accentColor:legacy.accentColor||fallback.accentColor,borderWidth:legacy.panelWidth??fallback.borderWidth,radius:legacy.panelRadius??fallback.radius,borderOpacity:legacy.panelOpacity??fallback.borderOpacity});
   const topFallback:FourSlotGroup={...DEFAULT_TERRAIN.topLeftGroup,scale:legacy.slotScale??1,gap:legacy.slotGap??1,style:legacySlot,slots:makeFourSlots()};
   const centerFallback:CenterSlotGroup={...DEFAULT_TERRAIN.centerGroup,scale:legacy.slotScale??1,gap12:legacy.slotGap??1,gap23:legacy.slotGap??1,style:legacySlot,slots:makeThreeSlots()};
-  return{liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),
+  return{liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),look:TERRAIN_LAYOUTS.some(l=>l.id===legacy.look)?legacy.look:'duel',
     id:String(legacy.id||DEFAULT_TERRAIN.id),name:String(legacy.name||DEFAULT_TERRAIN.name),
     printWidthMm:clamp(Number(legacy.printWidthMm)||610,200,1200),printHeightMm:clamp(Number(legacy.printHeightMm)||350,150,800),
     backgroundColor:legacy.backgroundColor||legacy.outerColor||DEFAULT_TERRAIN.backgroundColor,textColor:legacy.textColor||DEFAULT_TERRAIN.textColor,sheenEnabled:legacy.sheenEnabled!==false,
@@ -358,6 +387,12 @@ export default function TerrainEditor({onSwitchToCard}:{onSwitchToCard:()=>void}
   const history=useHistory<TerrainState>(()=>{try{return normalizeTerrain(JSON.parse(localStorage.getItem('kritoma.terrain')||'null'))}catch{return deepClone(DEFAULT_TERRAIN)}}),state=history.value,setState=history.set,[settingsOpen,setSettingsOpen]=useState(false),[saveError,setSaveError]=useState('');
   useEffect(()=>{try{localStorage.setItem('kritoma.terrain',JSON.stringify(state));setSaveError('')}catch{setSaveError('Spazio del browser esaurito: esporta il progetto prima di chiudere.')}},[state]);
   const markup=useMemo(()=>terrainSvg(state),[state]);
+  // Thumbnails depend on the look only, not on every drag of a block.
+  const lookKey=JSON.stringify({...state,liveEdits:undefined,extras:undefined,look:undefined});
+  const layoutThumbs=useMemo(()=>TERRAIN_LAYOUTS.map(l=>({...l,thumb:terrainSvg(normalizeTerrain({...applyTerrainLayout(state,l.id),liveEdits:{},extras:[]}))})),[lookKey]);
+  const gallery={layoutTitle:'Impostazione del terreno',active:state.look??'duel',layouts:layoutThumbs,themes:THEMES.map(t=>({id:t.id,label:t.label,colors:t.colors})),
+    onLayout:(id:string)=>setState(s=>normalizeTerrain({...applyTerrainLayout(s,id),liveEdits:clearGeometry(s.liveEdits)})),
+    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)setState(s=>normalizeTerrain(applyTerrainTheme(s,t)));}};
   const update=<K extends keyof TerrainState>(key:K,value:TerrainState[K])=>setState(s=>normalizeTerrain({...s,[key]:value}));
   const updateArea=(key:'outer'|'inner'|'guide'|'topLeftPanel'|'topRightPanel'|'lowerPanel',value:AreaStyle)=>setState(s=>({...s,[key]:value}));
   const updateFourGroup=(key:'topLeftGroup'|'topRightGroup',value:FourSlotGroup)=>setState(s=>({...s,[key]:value}));
@@ -370,7 +405,7 @@ export default function TerrainEditor({onSwitchToCard}:{onSwitchToCard:()=>void}
   const exportPdf=()=>raster(c=>{const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:[state.printWidthMm,state.printHeightMm]});pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,state.printWidthMm,state.printHeightMm);pdf.save(`${state.id}-print.pdf`)});
   const reset=()=>setState(deepClone(DEFAULT_TERRAIN));
   const renderFourGroupEditor=(title:string,key:'topLeftGroup'|'topRightGroup')=>{const group=state[key];const set=(patch:Partial<FourSlotGroup>)=>updateFourGroup(key,{...group,...patch});return <><ToggleField label={`Mostra ${title.toLowerCase()}`} checked={group.enabled} onChange={enabled=>set({enabled})}/>{group.enabled&&<><SlotStyleEditor title="Stile base dei 4 slot" value={group.style} onChange={style=>set({style})}/><div className="terrainLayoutGrid"><RangeField label="Dimensione degli spazi" value={group.scale} min={.72} max={1.22} step={.01} onChange={scale=>set({scale})} suffix="×"/><RangeField label="Spaziatura" value={group.gap} min={.5} max={2} step={.01} onChange={gap=>set({gap})} suffix="×"/><RangeField label="Sposta a destra / sinistra" value={group.offsetX} min={-120} max={120} onChange={offsetX=>set({offsetX})}/><RangeField label="Sposta in alto / basso" value={group.offsetY} min={-90} max={90} onChange={offsetY=>set({offsetY})}/></div>{group.slots.map((slot,i)=><SlotOverrideEditor key={i} title={`Slot ${i+1}`} value={slot} base={group.style} onChange={next=>{const slots=[...group.slots] as FourSlotGroup['slots'];slots[i]=next;set({slots})}}/>)}</>}</>};
-  return <div className="appShell terrainShell"><header className="topBar"><EditorSwitcher current="terrain" onCard={onSwitchToCard} onTerrain={()=>{}}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni terreno"><span>☰</span><b>Avanzate</b></button></header>{saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}<LiveEditor kind="terrain" unitMm={state.printWidthMm/1600} gridMm={20} safeMm={10} fields={terrainFields(state)} markup={markup} width={1600} height={920} edits={state.liveEdits} onChange={liveEdits=>update('liveEdits',liveEdits)} history={history} extras={state.extras} onExtras={(extras,liveEdits)=>setState(s=>normalizeTerrain({...s,extras,liveEdits}))} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
+  return <div className="appShell terrainShell"><header className="topBar"><EditorSwitcher current="terrain" onCard={onSwitchToCard} onTerrain={()=>{}}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni terreno"><span>☰</span><b>Avanzate</b></button></header>{saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}<LiveEditor kind="terrain" gallery={gallery} unitMm={state.printWidthMm/1600} gridMm={20} safeMm={10} fields={terrainFields(state)} markup={markup} width={1600} height={920} edits={state.liveEdits} onChange={liveEdits=>update('liveEdits',liveEdits)} history={history} extras={state.extras} onExtras={(extras,liveEdits)=>setState(s=>normalizeTerrain({...s,extras,liveEdits}))} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
     if(id==='background')return <ColorField label="Colore superficie" value={state.backgroundColor} onChange={v=>update('backgroundColor',v)}/>;
     if(['deck','grave','extra'].includes(id)){const key=(id==='deck'?'deckLabel':id==='grave'?'graveLabel':'extraLabel') as 'deckLabel'|'graveLabel'|'extraLabel';return <label>Nome dello spazio<textarea aria-label="Nome dello spazio" value={state[key]} onChange={e=>update(key,e.target.value)}/></label>;}
     if(['outer','inner','guide','topLeftPanel','topRightPanel','lowerPanel'].includes(id)){const key=id as 'outer';return <details><summary>Forma e linee dell’area</summary><AreaEditor title="Forma e dettagli dell’area" value={state[key]} onChange={v=>updateArea(key,v)}/></details>;}

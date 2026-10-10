@@ -4,7 +4,8 @@ import jsPDF from'jspdf';
 import'./styles.css';
 import {LiveEditor} from './LiveEditor';
 import {applyEdits,editable,normalizeEdits,normalizeExtras,renderExtras,removeIndexedEdits} from './liveModel';
-import {fieldData,safeSvg} from './liveModel';
+import {clearGeometry,fieldData,safeSvg} from './liveModel';
+import {THEMES} from './themes';
 import type {DataField,LiveEdits,ExtraElement} from './liveModel';
 import {useHistory} from './useHistory';
 import TerrainEditor,{EditorSwitcher}from'./TerrainEditor';
@@ -19,12 +20,13 @@ type FrameStyle={
   size:number;radius:number;opacity:number;inset:number;framePreset:FramePreset;frameDetail:number;frameSeed:number;
   accentSize:number;accentOpacity:number;accentPreset:AccentPreset;accentDensity:number;accentMotion:number;accentSeed:number;
 };
+type CardLayoutId='classic'|'window'|'textheavy'|'banner'|'bottomtitle';
 type TextRole='cost'|'title'|'meta'|'effect'|'stats';
 type TextStyle={size:number;family:string};
 type TypographyStyle=Record<TextRole,TextStyle>;
 type RarityKey='common'|'rare'|'super'|'ultra'|'secret'|'ultimate'|'ghost'|'gold'|'starlight';
 type Card={
-  liveEdits?:LiveEdits;extras?:ExtraElement[];
+  liveEdits?:LiveEdits;extras?:ExtraElement[];layout?:CardLayoutId;
   id:string;type:CardType;name:string;scope:string;scopeColor:string;cost?:string;rarity?:RarityKey;
   meta:Detail[];effects:Detail[];stats:Stat[];art?:string;
   artScale?:number;artX?:number;artY?:number;layers?:Partial<LayerOpacity>;frame?:Partial<FrameStyle>;
@@ -183,7 +185,7 @@ const cleanText=(v:unknown,fallback:string,max=200)=>typeof v==='string'?v.slice
 function normalizeDetail(x:Detail):Detail{return{...x,label:cleanText(x?.label,''),value:cleanText(x?.value,'',2000),opacity:clamp01(x?.opacity,1)}}
 function normalizeStat(x:Stat):Stat{return{...x,kind:cleanText(x?.kind,'',12),value:cleanText(x?.value,'',40),opacity:clamp01(x?.opacity,1)}}
 function normalizeCard(c:Card):Card{const legacy:any=c||{};return{
-  ...DEFAULT,...legacy,id:cleanText(legacy.id,DEFAULT.id,80),type:Object.hasOwn(TYPES,legacy.type)?legacy.type:'fighter',name:cleanText(legacy.name,DEFAULT.name),scope:cleanText(legacy.scope,DEFAULT.scope,80),scopeColor:HEX.test(legacy.scopeColor)?legacy.scopeColor:DEFAULT.scopeColor,cost:cleanText(legacy.cost,'',40),art:typeof legacy.art==='string'&&IMAGE_DATA.test(legacy.art)?legacy.art:undefined,liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),rarity:isRarity(legacy.rarity)?legacy.rarity:'common',
+  ...DEFAULT,...legacy,layout:isCardLayout(legacy.layout)?legacy.layout:'classic',id:cleanText(legacy.id,DEFAULT.id,80),type:Object.hasOwn(TYPES,legacy.type)?legacy.type:'fighter',name:cleanText(legacy.name,DEFAULT.name),scope:cleanText(legacy.scope,DEFAULT.scope,80),scopeColor:HEX.test(legacy.scopeColor)?legacy.scopeColor:DEFAULT.scopeColor,cost:cleanText(legacy.cost,'',40),art:typeof legacy.art==='string'&&IMAGE_DATA.test(legacy.art)?legacy.art:undefined,liveEdits:normalizeEdits(legacy.liveEdits),extras:normalizeExtras(legacy.extras),rarity:isRarity(legacy.rarity)?legacy.rarity:'common',
   meta:(Array.isArray(legacy.meta)?legacy.meta:DEFAULT.meta).slice(0,12).map(normalizeDetail),effects:(Array.isArray(legacy.effects)?legacy.effects:DEFAULT.effects).slice(0,12).map(normalizeDetail),stats:(Array.isArray(legacy.stats)?legacy.stats:DEFAULT.stats).slice(0,12).map(normalizeStat),
   artScale:Number.isFinite(legacy.artScale)?legacy.artScale:1,artX:Number.isFinite(legacy.artX)?legacy.artX:0,artY:Number.isFinite(legacy.artY)?legacy.artY:0,
   layers:{...DEFAULT_LAYERS,...(legacy.layers||{})},frame:{...DEFAULT_FRAME,...(legacy.frame||{})},typography:normalizeTypography(legacy.typography)
@@ -315,11 +317,36 @@ function renderEffects(effects:Detail[],y:number,x:number,w:number,h:number,styl
   const lineHeight=size*1.34,start=y+20;
   return effects.map((_,idx)=>editable(`effect-${idx}`,`Testo effetto ${idx+1}`,laid.map((line,row)=>line.index===idx&&line.text?`<text x="${x+18}" y="${start+row*lineHeight}" dominant-baseline="hanging" fill="#1e3343" font-size="${size.toFixed(2)}" font-family="${family}" font-weight="${line.first?700:500}" opacity="${line.opacity}">${esc(line.text)}</text>`:'').join(''))).join('');
 }
-function renderStats(stats:Stat[],id:string,statsOpacity:number,idOpacity:number,theme:string,x0:number,total:number,style:TextStyle){
-  const y=786,h=50,g=10,idW=132,idX=x0+total-idW,usable=idX-x0-(stats.length?g:0),sw=stats.length?(usable-g*(stats.length-1))/stats.length:0,family=esc(fontStack(style.family));
+function renderStats(stats:Stat[],id:string,statsOpacity:number,idOpacity:number,theme:string,x0:number,total:number,style:TextStyle,y=786){
+  const h=50,g=10,idW=132,idX=x0+total-idW,usable=idX-x0-(stats.length?g:0),sw=stats.length?(usable-g*(stats.length-1))/stats.length:0,family=esc(fontStack(style.family));
   const statNodes=stats.map((s,i)=>{const x=x0+i*(sw+g),fill=({ATK:'#9c1d2e',RES:'#02618f',PRF:'#b47a13',PV:'#5f4a84'}as any)[s.kind.toUpperCase()]||'#2d4456',o=statsOpacity*clamp01(s.opacity,1),divider=x+42,valueX=divider+(x+sw-divider)/2,value=String(s.value||''),fontSize=fitFontSize(value,clamp(style.size,10,28),10,Math.max(20,sw-50));return editable(`stat-${i}`,`Valore ${i+1}`,`<g opacity="${o}"><path d="${bevel(x,y,sw,h)}" fill="${fill}" fill-opacity=".94" stroke="#eee5d8" stroke-width="1.8"/><path d="${bevel(x+3,y+3,sw-6,h-6,10)}" fill="none" stroke="#142836" stroke-width="1.2"/><line x1="${divider}" y1="${y+7}" x2="${divider}" y2="${y+h-7}" stroke="#142836" stroke-width="1.1"/>${editable(`stat-icon-${i}`,`Simbolo valore ${i+1}`,statIcon(s.kind,x+21,y+25))}<text x="${valueX}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#f5f0e8" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(value)}</text></g>`) }).join('');
   const idSize=fitFontSize(id,13,9,idW-58),idNode=editable('id','Codice carta',`<g opacity="${idOpacity}"><path d="${bevel(idX,y,idW,h)}" fill="#0b1822" fill-opacity=".90" stroke="#eee5d8" stroke-width="1.8"/><path d="M ${idX+13} ${y+25} L ${idX+23} ${y+15} H ${idX+35} L ${idX+45} ${y+25} L ${idX+35} ${y+35} H ${idX+23} Z" fill="#9a9da6" opacity=".70"/><text x="${idX+29}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#eee7dc" font-size="12" font-family="${family}" font-weight="700">ID</text><text x="${idX+53}" y="${y+25}" dominant-baseline="middle" fill="#eee7dc" font-size="${idSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(id)}</text></g>`);
   return{statNodes,idNode};
+}
+
+const CARD_LAYOUTS:{id:CardLayoutId;label:string;note:string}[]=[
+  {id:'classic',label:'Classica',note:'Barra del titolo in alto con il costo, testo al centro, valori in basso'},
+  {id:'window',label:'Finestra',note:'Illustrazione incorniciata, informazioni sotto e un grande riquadro di testo'},
+  {id:'textheavy',label:'Molto testo',note:'Illustrazione bassa e un riquadro di regole molto ampio'},
+  {id:'banner',label:'Illustrazione piena',note:'Illustrazione a tutta carta, costo nell’angolo e titolo su un nastro in basso'},
+  {id:'bottomtitle',label:'Titolo in basso',note:'Illustrazione protagonista, costo e informazioni in alto, titolo in basso'}
+];
+const isCardLayout=(v:unknown):v is CardLayoutId=>typeof v==='string'&&CARD_LAYOUTS.some(l=>l.id===v);
+type Area={x:number;y:number;w:number;h:number};
+/** Where every block sits for a layout; text still fits inside the boxes it is given. */
+function cardGeometry(layout:CardLayoutId,o:{contentX:number;contentW:number;topY:number;costVisible:boolean;hasMeta:boolean;hasEffects:boolean}){
+  const{contentX,contentW,topY,costVisible,hasMeta,hasEffects}=o,right=630-contentX,costR=38,limit=764;
+  const bar=(y:number,h:number)=>{const costCx=contentX+25,headerX=costVisible?costCx+49:contentX;return{headerX,headerY:y,headerW:right-headerX,headerH:h,costCx,costCy:y+h/2,costR};};
+  const corner=(y:number,h:number)=>({headerX:contentX,headerY:y,headerW:contentW,headerH:h,costCx:contentX+36,costCy:topY+36,costR});
+  const base={metaX:contentX,metaW:contentW,statsY:786,win:undefined as Area|undefined};
+  const stack=(from:number)=>{const effectY=hasMeta?from+56:from;return{metaY:hasEffects?from:714,effectY,effectH:limit-effectY};};
+  switch(layout){
+    case'window':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:300} as Area|undefined,...stack(wy+312)};}
+    case'textheavy':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:170} as Area|undefined,...stack(wy+182)};}
+    case'banner':return{...base,...corner(520,64),metaY:hasEffects?594:700,effectY:hasMeta?650:594,effectH:limit-(hasMeta?650:594)};
+    case'bottomtitle':{const cw=costVisible?costR*2+14:0;return{...base,...corner(702,62),metaX:contentX+cw,metaW:contentW-cw,metaY:topY+(costVisible?8:0),effectY:586,effectH:104};}
+    default:return{...base,...bar(topY,72),metaY:hasEffects?566:714,effectY:hasMeta?624:566,effectH:hasMeta?145:204};
+  }
 }
 
 /** Values a free text can be linked to, so one layout fits every card. */
@@ -331,18 +358,22 @@ const cardFields=(c:Card):DataField[]=>[
 ];
 function svg(card:Card){
   const theme=card.scopeColor||'#1d5c6b',layers={...DEFAULT_LAYERS,...card.layers},frame={...DEFAULT_FRAME,...card.frame},typography=normalizeTypography(card.typography),rarity=isRarity(card.rarity)?card.rarity:'common';
-  const scale=clamp(card.artScale??1,.4,3.5),ox=card.artX??0,oy=card.artY??0,baseX=20,baseY=20,baseW=590,baseH=840,iw=baseW*scale,ih=baseH*scale,ix=baseX-(iw-baseW)/2+ox,iy=baseY-(ih-baseH)/2+oy;
-  const artFilter=rarity!=='common'?` filter="url(#art-${rarity})"`:'';
-  const art=card.art?`<image href="${esc(card.art)}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cardClip)" opacity="${clamp01(layers.artwork,1)}"${artFilter}/>`:`<rect x="20" y="20" width="590" height="840" rx="28" fill="#18232b" opacity=".9"/>`;
   const costVisible=card.type!=='token'&&card.type!=='objective',frameO=clamp01(layers.frame,1),headerO=clamp01(layers.header,1),costO=clamp01(layers.cost,1),metaO=clamp01(layers.meta,1),effectO=clamp01(layers.effect,1),statsO=clamp01(layers.stats,1),idO=clamp01(layers.id,1);
-  const contentX=clamp(52+frame.inset*.55+frame.size*.45,58,74),contentW=630-contentX*2,headerH=72,headerY=clamp(43+frame.inset*.30+frame.size*.25,47,58),headerCy=headerY+headerH/2,costR=38,costCx=contentX+25;
-  const headerX=costVisible?costCx+49:contentX,headerRight=630-contentX,headerW=headerRight-headerX,diamondX=headerRight-28,titleX=headerX+28,titleMax=Math.max(80,diamondX-titleX-29);
+  const layout:CardLayoutId=isCardLayout(card.layout)?card.layout:'classic';
+  const contentX=clamp(52+frame.inset*.55+frame.size*.45,58,74),contentW=630-contentX*2,topY=clamp(43+frame.inset*.30+frame.size*.25,47,58);
+  const hasMeta=card.meta.length>0,hasEffects=card.effects.length>0;
+  const g=cardGeometry(layout,{contentX,contentW,topY,costVisible,hasMeta,hasEffects});
+  const{headerX,headerY,headerW,headerH,costCx,costCy,costR,metaX,metaW,metaY,effectY,effectH,statsY,win}=g;
+  const headerCy=headerY+headerH/2,headerRight=630-contentX,diamondX=headerRight-28,titleX=headerX+28,titleMax=Math.max(80,diamondX-titleX-29);
   const titleSize=fitFontSize(card.name,clamp(typography.title.size,11,38),11,titleMax),costSize=fitFontSize(card.cost||'',clamp(typography.cost.size,10,34),10,costR*1.38);
   const titleFamily=esc(fontStack(typography.title.family)),costFamily=esc(fontStack(typography.cost.family));
-  const hasMeta=card.meta.length>0,hasEffects=card.effects.length>0,metaY=hasEffects?566:714,effectY=hasMeta?624:566,effectH=hasMeta?145:204;
-  const{statNodes,idNode}=renderStats(card.stats,card.id,statsO,idO,theme,contentX,contentW,typography.stats);
+  const area=win??{x:20,y:20,w:590,h:840},scale=clamp(card.artScale??1,.4,3.5),ox=card.artX??0,oy=card.artY??0,iw=area.w*scale,ih=area.h*scale,ix=area.x-(iw-area.w)/2+ox,iy=area.y-(ih-area.h)/2+oy;
+  const artFilter=rarity!=='common'?` filter="url(#art-${rarity})"`:'',clipId=win?`artWindowClip-${layout}`:'cardClip';
+  const artImage=card.art?`<image href="${esc(card.art)}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})" opacity="${clamp01(layers.artwork,1)}"${artFilter}/>`:win?`<rect x="${area.x}" y="${area.y}" width="${area.w}" height="${area.h}" rx="18" fill="#18232b" opacity=".9"/>`:`<rect x="20" y="20" width="590" height="840" rx="28" fill="#18232b" opacity=".9"/>`;
+  const art=win?`<rect x="20" y="20" width="590" height="840" rx="28" fill="#0f1a21"/>${artImage}<rect x="${area.x}" y="${area.y}" width="${area.w}" height="${area.h}" rx="18" fill="none" stroke="${theme}" stroke-width="2.6"/>`:artImage;
+  const{statNodes,idNode}=renderStats(card.stats,card.id,statsO,idO,theme,contentX,contentW,typography.stats,statsY);
   return safeSvg(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 630 880" width="630" height="880"><defs>
-    <clipPath id="cardClip"><rect x="20" y="20" width="590" height="840" rx="28"/></clipPath>
+    <clipPath id="cardClip"><rect x="20" y="20" width="590" height="840" rx="28"/></clipPath>${win?`<clipPath id="artWindowClip-${layout}"><rect x="${win.x}" y="${win.y}" width="${win.w}" height="${win.h}" rx="18"/></clipPath>`:''}
     <linearGradient id="paperGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f4ede2"/><stop offset="100%" stop-color="#e6ddcf"/></linearGradient>
     <filter id="paperNoise" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="5" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m" result="f"><feFuncA type="table" tableValues="0 .08"/></feComponentTransfer><feBlend in="SourceGraphic" in2="f" mode="multiply"/></filter>
     ${rarityDefs()}
@@ -351,8 +382,8 @@ function svg(card:Card){
   ${editable('rarity-art','Finitura illustrazione',renderRarityArtOverlay(rarity))}
   ${editable('frame','Cornice',frameBaseSvg(theme,frame,frameO))}${editable('accents','Decorazioni',frameAccentSvg(theme,frame,frameO))}
   <g data-live-id="header" data-live-label="Titolo e riquadro" opacity="${headerO}"><rect x="${headerX}" y="${headerY}" width="${headerW}" height="${headerH}" rx="24" fill="url(#paperGrad)" fill-opacity=".92" filter="url(#paperNoise)" stroke="#efe6d8" stroke-width="1.4"/><rect x="${headerX+5}" y="${headerY+5}" width="${headerW-10}" height="${headerH-10}" rx="20" fill="none" stroke="${theme}" stroke-width="1.8" opacity=".9"/><g data-live-id="title" data-live-label="Testo del titolo"><text x="${titleX}" y="${headerCy}" dominant-baseline="middle" fill="#213749" font-size="${titleSize.toFixed(2)}" font-family="${titleFamily}" font-weight="700">${esc(card.name)}</text></g>${editable('diamond','Simbolo del titolo',diamond(theme,diamondX,headerCy))}</g>
-  ${costVisible?`<g data-live-id="cost" data-live-label="Costo" opacity="${costO}"><circle cx="${costCx}" cy="${headerCy}" r="${costR}" fill="#0b1720" stroke="${theme}" stroke-width="2.4"/><circle cx="${costCx}" cy="${headerCy}" r="31.5" fill="url(#paperGrad)" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.5"/><circle cx="${costCx}" cy="${headerCy}" r="28" fill="none" stroke="#173040" stroke-width="1.5"/><g data-live-id="cost-value" data-live-label="Testo del costo"><text x="${costCx}" y="${headerCy}" dominant-baseline="middle" text-anchor="middle" fill="#173040" font-size="${costSize.toFixed(2)}" font-family="${costFamily}" font-weight="700">${esc(card.cost||'')}</text></g></g>`:''}
-  ${renderSlots(card.meta,metaO,theme,metaY,contentX,contentW,typography.meta)}
+  ${costVisible?`<g data-live-id="cost" data-live-label="Costo" opacity="${costO}"><circle cx="${costCx}" cy="${costCy}" r="${costR}" fill="#0b1720" stroke="${theme}" stroke-width="2.4"/><circle cx="${costCx}" cy="${costCy}" r="31.5" fill="url(#paperGrad)" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.5"/><circle cx="${costCx}" cy="${costCy}" r="28" fill="none" stroke="#173040" stroke-width="1.5"/><g data-live-id="cost-value" data-live-label="Testo del costo"><text x="${costCx}" y="${costCy}" dominant-baseline="middle" text-anchor="middle" fill="#173040" font-size="${costSize.toFixed(2)}" font-family="${costFamily}" font-weight="700">${esc(card.cost||'')}</text></g></g>`:''}
+  ${renderSlots(card.meta,metaO,theme,metaY,metaX,metaW,typography.meta)}
   ${hasEffects?`<g data-live-id="effects" data-live-label="Riquadro effetti" opacity="${effectO}"><rect x="${contentX}" y="${effectY}" width="${contentW}" height="${effectH}" rx="18" fill="url(#paperGrad)" fill-opacity=".78" filter="url(#paperNoise)" stroke="#eee6da" stroke-width="1.2"/><rect x="${contentX+5}" y="${effectY+5}" width="${contentW-10}" height="${effectH-10}" rx="14" fill="none" stroke="#173040" stroke-width="1.4" opacity=".92"/>${renderEffects(card.effects,effectY,contentX,contentW,effectH,typography.effect)}</g>`:''}
   ${statNodes}${idNode}
   ${editable('rarity-surface','Riflessi e finitura',renderRaritySurface(rarity))}${renderExtras(card.extras,fieldData(cardFields(card)))}
@@ -374,6 +405,11 @@ function App(){
   useEffect(()=>{localStorage.setItem('kritoma.foilPreview',String(foilPreview));if(!foilPreview)setTilt(NEUTRAL_TILT)},[foilPreview]);
   useEffect(()=>{localStorage.setItem('kritoma.reduceMotion',String(reduceMotion))},[reduceMotion]);
   const update=(p:Partial<Card>)=>setCard(normalizeCard({...card,...p}));
+  // Thumbnails depend on the look only, not on every drag of a block.
+  const layoutThumbs=useMemo(()=>CARD_LAYOUTS.map(l=>({id:l.id,label:l.label,note:l.note,thumb:svg({...preset(card.type),scopeColor:card.scopeColor,frame:card.frame,typography:card.typography,layout:l.id,liveEdits:{},extras:[]})})),[card.type,card.scopeColor,card.frame,card.typography]);
+  const gallery={layoutTitle:'Impostazione della carta',active:card.layout??'classic',layouts:layoutThumbs,themes:THEMES.map(t=>({id:t.id,label:t.label,colors:t.colors})),
+    onLayout:(id:string)=>update({layout:id as CardLayoutId,liveEdits:clearGeometry(card.liveEdits)}),
+    onTheme:(id:string)=>{const t=THEMES.find(v=>v.id===id);if(t)update({scopeColor:t.card.scopeColor,frame:{...card.frame,framePreset:t.card.framePreset as FramePreset,accentPreset:t.card.accentPreset as AccentPreset},typography:{...card.typography,title:{...card.typography?.title,family:t.card.titleFont},effect:{...card.typography?.effect,family:t.card.textFont}}});}};
   const updateLayer=(key:keyof LayerOpacity,value:number)=>update({layers:{...card.layers,[key]:value}});
   const updateFrame=(key:keyof FrameStyle,value:FrameStyle[keyof FrameStyle])=>update({frame:{...card.frame,[key]:value}});
   const updateTypography=(role:TextRole,patch:Partial<TextStyle>)=>update({typography:{...card.typography,[role]:{...normalizeTypography(card.typography)[role],...patch}}});
@@ -409,7 +445,7 @@ function App(){
   return <div className="appShell">
     <header className="topBar"><EditorSwitcher current="card" onCard={()=>{}} onTerrain={()=>setEditorMode('terrain')}/><button className="settingsButton" onClick={()=>setSettingsOpen(true)} aria-label="Apri impostazioni"><span>☰</span><b>Avanzate</b></button></header>
     {saveError&&<p className="liveSaveError" role="alert">{saveError}</p>}
-    {liveMode?<LiveEditor kind="card" unitMm={.1} gridMm={5} safeMm={3} fields={cardFields(card)} markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
+    {liveMode?<LiveEditor kind="card" gallery={gallery} unitMm={.1} gridMm={5} safeMm={3} fields={cardFields(card)} markup={markup} width={630} height={880} edits={card.liveEdits} onChange={liveEdits=>update({liveEdits})} history={history} extras={card.extras} onExtras={(extras,liveEdits)=>update({extras,liveEdits})} onAdvanced={()=>setSettingsOpen(true)}>{id=>{
       const field=(label:string,value:string,change:(v:string)=>void)=><label>{label}<textarea aria-label={label} value={value} onChange={e=>change(e.target.value)}/></label>;
       if(id==='header'||id==='title')return field('Nome della carta',card.name,name=>update({name}));
       if(id==='cost'||id==='cost-value')return field('Costo',card.cost||'',cost=>update({cost}));

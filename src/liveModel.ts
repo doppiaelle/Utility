@@ -152,3 +152,17 @@ export function parseBackup(text:string):BackupResult{
   if('kritoma.templates' in data){const v=normalizeTemplates(data['kritoma.templates']);entries['kritoma.templates']=JSON.stringify(v);summary.templates=v.length;}
   return Object.keys(entries).length?{ok:true,entries,summary}:{ok:false,error:'Il backup non contiene dati da importare.'};
 }
+
+/** Switching layout keeps colours, text and visibility but drops hand-placed geometry. */
+const GEOMETRY_KEYS=['x','y','sx','sy','rotation','cx','cy','order'];
+export function clearGeometry(raw:LiveEdits|undefined):LiveEdits{
+  const result:LiveEdits={};
+  for(const [id,edit] of Object.entries(normalizeEdits(raw))){
+    const rest=Object.fromEntries(Object.entries(edit).filter(([k])=>!GEOMETRY_KEYS.includes(k)));
+    if(Object.keys(rest).length)result[id]=rest as ElementEdit;
+  }
+  return result;
+}
+
+/** What the style tab shows: layout thumbnails and theme swatches. */
+export type StyleGallery={layoutTitle:string;active:string;layouts:{id:string;label:string;note:string;thumb:string}[];themes:{id:string;label:string;colors:string[]}[];onLayout:(id:string)=>void;onTheme:(id:string)=>void};
