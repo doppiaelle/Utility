@@ -104,9 +104,9 @@ const ACCENT_PRESETS:{id:Exclude<AccentPreset,'random'>;label:string}[]=[
 const DEFAULT_TYPOGRAPHY:TypographyStyle={
   cost:{size:23,family:'Arial'},
   title:{size:24,family:'Arial'},
-  meta:{size:15,family:'Arial'},
-  effect:{size:16,family:'Arial'},
-  stats:{size:20,family:'Arial'}
+  meta:{size:22,family:'Arial'},
+  effect:{size:22,family:'Arial'},
+  stats:{size:22,family:'Arial'}
 };
 const FONT_OPTIONS=['Arial','Inter','Trebuchet MS','Verdana','Georgia','Impact','Courier New'];
 const FONT_STACKS:Record<string,string>={
@@ -339,8 +339,8 @@ function renderEffects(effects:Detail[],y:number,x:number,w:number,h:number,styl
 }
 function renderStats(stats:Stat[],id:string,statsOpacity:number,idOpacity:number,theme:string,x0:number,total:number,style:TextStyle,y=786){
   const h=50,g=10,idW=132,idX=x0+total-idW,usable=idX-x0-(stats.length?g:0),sw=stats.length?(usable-g*(stats.length-1))/stats.length:0,family=esc(fontStack(style.family));
-  const statNodes=stats.map((s,i)=>{const x=x0+i*(sw+g),fill=({ATK:'#9c1d2e',RES:'#02618f',PRF:'#b47a13',PV:'#5f4a84'}as any)[s.kind.toUpperCase()]||'#2d4456',o=statsOpacity*clamp01(s.opacity,1),divider=x+42,valueX=divider+(x+sw-divider)/2,value=String(s.value||''),fontSize=fitFontSize(value,clamp(style.size,10,28),10,Math.max(20,sw-50));return editable(`stat-${i}`,`Valore ${i+1}`,`<g opacity="${o}"><path d="${bevel(x,y,sw,h)}" fill="${fill}" fill-opacity=".94" stroke="#eee5d8" stroke-width="1.8"/><path d="${bevel(x+3,y+3,sw-6,h-6,10)}" fill="none" stroke="#142836" stroke-width="1.2"/><line x1="${divider}" y1="${y+7}" x2="${divider}" y2="${y+h-7}" stroke="#142836" stroke-width="1.1"/>${editable(`stat-icon-${i}`,`Simbolo valore ${i+1}`,statIcon(s.kind,x+21,y+25))}<text x="${valueX}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#f5f0e8" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(value)}</text></g>`) }).join('');
-  const idSize=fitFontSize(id,13,9,idW-58),idNode=editable('id','Codice carta',`<g opacity="${idOpacity}"><path d="${bevel(idX,y,idW,h)}" fill="#0b1822" fill-opacity=".90" stroke="#eee5d8" stroke-width="1.8"/><path d="M ${idX+13} ${y+25} L ${idX+23} ${y+15} H ${idX+35} L ${idX+45} ${y+25} L ${idX+35} ${y+35} H ${idX+23} Z" fill="#9a9da6" opacity=".70"/><text x="${idX+29}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#eee7dc" font-size="12" font-family="${family}" font-weight="700">ID</text><text x="${idX+53}" y="${y+25}" dominant-baseline="middle" fill="#eee7dc" font-size="${idSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(id)}</text></g>`);
+  const statNodes=stats.map((s,i)=>{const x=x0+i*(sw+g),fill=({ATK:'#9c1d2e',RES:'#02618f',PRF:'#8f5c0c',PV:'#5f4a84'}as any)[s.kind.toUpperCase()]||'#2d4456',o=statsOpacity*clamp01(s.opacity,1),divider=x+42,valueX=divider+(x+sw-divider)/2,value=String(s.value||''),fontSize=fitFontSize(value,clamp(style.size,10,28),10,Math.max(20,sw-50));return editable(`stat-${i}`,`Valore ${i+1}`,`<g opacity="${o}"><path d="${bevel(x,y,sw,h)}" fill="${fill}" fill-opacity=".94" stroke="#eee5d8" stroke-width="1.8"/><path d="${bevel(x+3,y+3,sw-6,h-6,10)}" fill="none" stroke="#142836" stroke-width="1.2"/><line x1="${divider}" y1="${y+7}" x2="${divider}" y2="${y+h-7}" stroke="#142836" stroke-width="1.1"/>${editable(`stat-icon-${i}`,`Simbolo valore ${i+1}`,statIcon(s.kind,x+21,y+25))}<text x="${valueX}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#f5f0e8" font-size="${fontSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(value)}</text></g>`) }).join('');
+  const idSize=fitFontSize(id,13,9,idW-58),idText=(()=>{if(charUnits(id)*idSize<=idW-58+.5)return id;let t=id;while(t.length>4&&charUnits(t+'…')*idSize>idW-58)t=t.slice(0,-1);return t+'…';})(),idNode=editable('id','Codice carta',`<g opacity="${idOpacity}"><path d="${bevel(idX,y,idW,h)}" fill="#0b1822" fill-opacity=".90" stroke="#eee5d8" stroke-width="1.8"/><path d="M ${idX+13} ${y+25} L ${idX+23} ${y+15} H ${idX+35} L ${idX+45} ${y+25} L ${idX+35} ${y+35} H ${idX+23} Z" fill="#9a9da6" opacity=".70"/><text x="${idX+29}" y="${y+25}" dominant-baseline="middle" text-anchor="middle" fill="#eee7dc" font-size="12" font-family="${family}" font-weight="700">ID</text><text x="${idX+53}" y="${y+25}" dominant-baseline="middle" fill="#eee7dc" font-size="${idSize.toFixed(2)}" font-family="${family}" font-weight="700">${esc(idText)}</text></g>`);
   return{statNodes,idNode};
 }
 
@@ -387,13 +387,13 @@ function cardGeometry(layout:CardLayoutId,o:{contentX:number;contentW:number;top
   const base={metaX:contentX,metaW:contentW,statsY:786,win:undefined as Area|undefined};
   const stack=(from:number)=>{const effectY=hasMeta?from+56:from;return{metaY:hasEffects?from:714,effectY,effectH:limit-effectY};};
   switch(layout){
-    case'window':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:300} as Area|undefined,...stack(wy+312)};}
+    case'window':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:250} as Area|undefined,...stack(wy+262)};}
     case'textheavy':{const wy=topY+86;return{...base,...bar(topY,72),win:{x:contentX,y:wy,w:contentW,h:170} as Area|undefined,...stack(wy+182)};}
-    case'banner':return{...base,...corner(520,64),metaY:hasEffects?594:700,effectY:hasMeta?650:594,effectH:limit-(hasMeta?650:594)};
-    case'portrait':{const wy=topY;return{...base,...corner(wy+384,64),win:{x:contentX,y:wy,w:contentW,h:372} as Area|undefined,...stack(wy+460)};}
-    case'seal':return{...base,headerX:contentX+70,headerY:topY,headerW:contentW-140,headerH:64,costCx:315,costCy:540,costR,metaY:hasEffects?596:714,effectY:hasMeta?652:596,effectH:limit-(hasMeta?652:596)};
-    case'bottomtitle':{const cw=costVisible?costR*2+14:0;return{...base,...corner(702,62),metaX:contentX+cw,metaW:contentW-cw,metaY:topY+(costVisible?8:0),effectY:586,effectH:104};}
-    default:return{...base,...bar(topY,72),metaY:hasEffects?566:714,effectY:hasMeta?624:566,effectH:hasMeta?145:204};
+    case'banner':return{...base,...corner(470,64),metaY:hasEffects?544:700,effectY:hasMeta?600:544,effectH:limit-(hasMeta?600:544)};
+    case'portrait':{const wy=topY;return{...base,...corner(wy+342,64),win:{x:contentX,y:wy,w:contentW,h:330} as Area|undefined,...stack(wy+418)};}
+    case'seal':return{...base,headerX:contentX+70,headerY:topY,headerW:contentW-140,headerH:64,costCx:315,costCy:500,costR,metaY:hasEffects?556:714,effectY:hasMeta?612:556,effectH:limit-(hasMeta?612:556)};
+    case'bottomtitle':{const cw=costVisible?costR*2+14:0;return{...base,...corner(702,62),metaX:contentX+cw,metaW:contentW-cw,metaY:topY+(costVisible?8:0),effectY:540,effectH:150};}
+    default:return{...base,...bar(topY,72),...stack(500)};
   }
 }
 
@@ -511,7 +511,8 @@ function App(){
     }catch{return'Spazio del browser esaurito: mazzi o ruoli non salvati.';}
     if(o.open&&incoming.length)setCard(incoming[0]);
     const parts=[incoming.length&&`${incoming.length} ${incoming.length===1?'carta':'carte'}`,newDecks.length&&`${newDecks.length} ${newDecks.length===1?'mazzo':'mazzi'}`,roleCount&&`${roleCount} ${roleCount===1?'ruolo':'ruoli'}`].filter(Boolean).join(', ');
-    return`Importate ${parts}${problems.length?`, ${problems.length} scartate (${problems.slice(0,3).join(' ')})`:''}.${ignored?` ${ignored} file ignorati.`:''}${notes.length?` ${notes.slice(0,2).join(' ')}`:''}`;
+    const heavy=incoming.filter(c=>c.layout==='textheavy').length;
+    return`Importate ${parts}${heavy?` (${heavy} con molto testo usano l’impostazione «Molto testo»)`:''}${problems.length?`, ${problems.length} scartate (${problems.slice(0,3).join(' ')})`:''}.${ignored?` ${ignored} file ignorati.`:''}${notes.length?` ${notes.slice(0,2).join(' ')}`:''}`;
   };
   const library={
     current:{name:card.name,lore:card.lore??'',artPrompt:card.artPrompt??'',rules:rulesText(card.rules)},

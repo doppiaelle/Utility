@@ -3,7 +3,7 @@ export type ImportedDetail={label:string;value:string;opacity:number};
 export type ImportedStat={kind:string;value:string;opacity:number};
 export type ImportedCard={
   id:string;type:'fighter'|'location'|'action'|'extraFighter'|'objective'|'token';name:string;scope:string;scopeColor:string;cost:string;
-  rarity:string;meta:ImportedDetail[];effects:ImportedDetail[];stats:ImportedStat[];copies:number;lore:string;artPrompt:string;rules:Rules;
+  rarity:string;meta:ImportedDetail[];effects:ImportedDetail[];stats:ImportedStat[];copies:number;lore:string;artPrompt:string;rules:Rules;layout:'classic'|'textheavy';
 };
 /** The structured rules of the game files, kept as plain data so nothing is lost. */
 export type Rules=Record<string,unknown>;
@@ -42,6 +42,8 @@ const RARITIES:Record<string,string>={leggendaria:'legendary',leggendario:'legen
 const DISCIPLINE_COLORS:Record<string,string>={informatica:'#1d5c6b',economia:'#2f7d4f',ingegneria:'#b5652d',medicina:'#b23a48',media:'#7a4fb5',sportivi:'#2b6fb5'};
 const FALLBACK_COLORS=['#1d5c6b','#2f7d4f','#b5652d','#b23a48','#7a4fb5','#2b6fb5','#8a6a2f','#4a6a7a'];
 
+/** Characters of effect, condition, keywords and lore above which the tall text box is used. */
+export const LONG_TEXT=125;
 const text=(v:unknown,max=400)=>typeof v==='string'?v.replace(/\s*\n\s*/g,' ').trim().slice(0,max):'';
 const num=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?String(Math.round(v)):'';
 const detail=(value:string,label=''):ImportedDetail=>({label,value,opacity:1});
@@ -79,6 +81,7 @@ export function mapTcgCard(raw:unknown,o:{includeLore?:boolean}={}):ImportResult
   if(effect)effects.push(detail(effect,'EFFETTO'));
   const lore=text(r.lore,600);if(o.includeLore&&lore)effects.push(detail(lore));
   const copies=typeof r.copie==='number'&&Number.isFinite(r.copie)?Math.max(1,Math.min(99,Math.round(r.copie))):1;
-  const hidesCost=type==='objective'||type==='token';
-  return{ok:true,warnings,card:{id,type,name,scope,scopeColor:disciplineColor(scope),cost:hidesCost?'':num(r.costo),rarity,meta,effects,stats,copies,lore,artPrompt:text(r.art_prompt,600),rules:cleanRules(r)}};
+  // Long texts do not fit the classic box at a readable size: they get the layout with the tall text box.
+  const volume=effects.reduce((n,e)=>n+(e.label?e.label.length+2:0)+e.value.length,0),hidesCost=type==='objective'||type==='token';
+  return{ok:true,warnings,card:{id,type,name,scope,scopeColor:disciplineColor(scope),cost:hidesCost?'':num(r.costo),rarity,meta,effects,stats,copies,lore,artPrompt:text(r.art_prompt,600),rules:cleanRules(r),layout:volume>LONG_TEXT?'textheavy':'classic'}};
 }
