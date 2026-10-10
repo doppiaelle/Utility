@@ -447,11 +447,14 @@ test('print check: small text, unreadable colours, overlaps, low resolution and 
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.getByRole('button',{name:'PDF',exact:true}).click();
  const audit=page.getByLabel('Controllo prima di stampare');
- await expect(audit.locator('.printAuditSummary')).toContainText('Controllate 1 carta e il retro: 0 errori, 3 avvisi, 1 nota');
- await expect(audit).toContainText('Testo effetto 1: testo da 4,5 pt, sotto i 6 pt consigliati');await expect(audit).toContainText('Illustrazione: mancante');await expect(audit).toContainText('Per testi più grandi');
+ await expect(audit.locator('.printAuditSummary')).toContainText('Controllate 1 carta e il retro: 0 errori, 0 avvisi, 1 nota');await expect(audit).toContainText('Illustrazione: mancante');
+ await page.keyboard.press('Escape');
+ await choose(page,'effect-0');await page.getByText('Stile del testo',{exact:true}).click();await page.getByLabel('Grandezza testo',{exact:true}).fill('16');
+ await page.getByRole('button',{name:'PDF',exact:true}).click();
+ await expect(audit.locator('.printAuditSummary')).toContainText('0 errori, 1 avviso');await expect(audit).toContainText('Testo effetto 1: testo da 4,5 pt, sotto i 6 pt consigliati');await expect(audit).toContainText('Per testi più grandi');
  await page.keyboard.press('Escape');
  await choose(page,'title');await page.getByLabel('Sposta in alto / basso',{exact:true}).fill('480');
- await choose(page,'effect-0');await page.getByText('Stile del testo',{exact:true}).click();await page.getByLabel('Colore testo',{exact:true}).fill('#efe7da');
+ await choose(page,'effect-0');await page.getByLabel('Colore testo',{exact:true}).fill('#efe7da');
  const png=await testPng(page,100,50);await page.locator('input[type=file][accept*=png]').setInputFiles({name:'a.png',mimeType:'image/png',buffer:png});
  await page.getByLabel('Larghezza (mm)',{exact:true}).fill('60');
  await page.getByRole('button',{name:'PDF',exact:true}).click();
