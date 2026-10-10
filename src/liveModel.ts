@@ -45,7 +45,7 @@ export function applyEdits(markup:string,raw:LiveEdits|undefined):string{
   return new XMLSerializer().serializeToString(doc.documentElement);
 }
 
-export const EXTRA_KINDS={text:'Testo',shape:'Rettangolo',ellipse:'Cerchio',line:'Linea',triangle:'Triangolo',diamond:'Rombo',hexagon:'Esagono',star:'Stella',image:'Immagine',icon:'Icona'} as const;
+export const EXTRA_KINDS={text:'Testo',shape:'Rettangolo',ellipse:'Cerchio',line:'Linea',triangle:'Triangolo',diamond:'Rombo',hexagon:'Esagono',star:'Stella',ribbon:'Nastro',shield:'Stemma',divider:'Separatore',image:'Immagine',icon:'Icona'} as const;
 export type ExtraKind=keyof typeof EXTRA_KINDS;
 /** Line icons drawn in a 28-unit box centred on the origin. */
 export const ICONS:Record<string,{label:string;body:string}>={
@@ -58,7 +58,21 @@ export const ICONS:Record<string,{label:string;body:string}>={
   crown:{label:'Corona',body:'<path d="M-11 9h22l2-15-7 6-6-10-6 10-7-6Z"/>'},
   drop:{label:'Goccia',body:'<path d="M0-12c5 7 8 10 8 14a8 8 0 0 1-16 0c0-4 3-7 8-14Z"/>'},
   arrow:{label:'Freccia',body:'<path d="M-11 0h21M3-7l7 7-7 7"/>'},
-  gem:{label:'Gemma',body:'<path d="M0-12 12 0 0 12-12 0ZM-12 0h24M0-12-5 0 0 12 5 0Z"/>'}
+  gem:{label:'Gemma',body:'<path d="M0-12 12 0 0 12-12 0ZM-12 0h24M0-12-5 0 0 12 5 0Z"/>'},
+  flame:{label:'Fiamma',body:'<path d="M0-13C4-7 9-3 9 3a9 9 0 0 1-18 0c0-3 2-5 3-7 1 2 2 3 4 3-1-4-1-7 2-12Z"/>'},
+  leaf:{label:'Foglia',body:'<path d="M-10 10C-10-2 0-12 11-11 12 0 4 11-10 10ZM-10 10 4-4"/>'},
+  moon:{label:'Luna',body:'<path d="M6-12A11 11 0 1 0 11 6 9 9 0 0 1 6-12Z"/>'},
+  sun:{label:'Sole',body:'<circle r="5"/><path d="M0-13v4M0 9v4M-13 0h4M9 0h4M-9-9l3 3M6 6l3 3M-9 9l3-3M6-6l3-3"/>'},
+  eye:{label:'Occhio',body:'<path d="M-13 0C-7-8 7-8 13 0 7 8-7 8-13 0Z"/><circle r="3.5"/>'},
+  coin:{label:'Moneta',body:'<circle r="11"/><circle r="6"/><path d="M0-3v6"/>'},
+  book:{label:'Libro',body:'<path d="M-12-9h9c2 0 3 1 3 3v15c0-2-1-3-3-3h-9ZM12-9H3C1-9 0-8 0-6v15c0-2 1-3 3-3h9Z"/>'},
+  key:{label:'Chiave',body:'<circle cx="-6" cy="0" r="5"/><path d="M-1 0h13M8 0v5M12 0v4"/>'},
+  mountain:{label:'Montagna',body:'<path d="M-13 10-4-6 1 2 5-3 13 10Z"/>'},
+  cloud:{label:'Nuvola',body:'<path d="M-9 8a5 5 0 0 1 0-10 7 7 0 0 1 13-2 6 6 0 0 1 2 12Z"/>'},
+  wave:{label:'Onda',body:'<path d="M-13-3q3.2-4 6.5 0t6.5 0 6.5 0 6.5 0M-13 5q3.2-4 6.5 0t6.5 0 6.5 0 6.5 0"/>'},
+  cross:{label:'Croce',body:'<path d="M-3-12h6v9h9v6h-9v9h-6v-9h-9v-6h9Z"/>'},
+  chip:{label:'Chip',body:'<rect x="-7" y="-7" width="14" height="14" rx="2"/><path d="M-3-12v5M3-12v5M-3 7v5M3 7v5M-12-3h5M-12 3h5M7-3h5M7 3h5"/>'},
+  chart:{label:'Grafico',body:'<path d="M-11 11V1M-4 11V-4M3 11V-9M10 11V-1M-13 13h26"/>'}
 };
 /** A value the card or terrain already owns, offered to text elements so a layout can be drawn once. */
 export type DataField={key:string;label:string;value:string};
@@ -86,6 +100,9 @@ function extraBody(v:ExtraElement,data?:Record<string,string>):string{
     case'diamond':return poly([[.5,0],[1,.5],[.5,1],[0,.5]]);
     case'hexagon':return poly([[.25,0],[.75,0],[1,.5],[.75,1],[.25,1],[0,.5]]);
     case'star':return poly(Array.from({length:10},(_,i)=>{const a=(i*36-90)*Math.PI/180,r=i%2?.2:.5;return[.5+r*Math.cos(a),.5+r*Math.sin(a)] as [number,number]}));
+    case'ribbon':return poly([[0,.12],[1,.12],[.92,.5],[1,.88],[0,.88],[.08,.5]]);
+    case'shield':return`<path d="M${x} ${y} H${n2(x+w)} V${n2(y+h*.55)} Q${n2(x+w)} ${n2(y+h*.85)} ${n2(x+w/2)} ${n2(y+h)} Q${x} ${n2(y+h*.85)} ${x} ${n2(y+h*.55)} Z" ${SHAPE} stroke-linejoin="round"/>`;
+    case'divider':{const cx=x+w/2,cy=y+h/2,g=Math.min(16,w/4);return`${hit}<g stroke="#eee6da" stroke-width="3" stroke-linecap="round" fill="none"><line x1="${x}" y1="${cy}" x2="${n2(cx-g)}" y2="${cy}"/><line x1="${n2(cx+g)}" y1="${cy}" x2="${x+w}" y2="${cy}"/><path d="M${cx} ${n2(cy-g*.6)} L${n2(cx+g*.6)} ${cy} L${cx} ${n2(cy+g*.6)} L${n2(cx-g*.6)} ${cy} Z" fill="#1d5c6b"/></g>`;}
     case'image':return`<image href="${v.src}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`;
     case'icon':return`${hit}<g transform="translate(${x+w/2} ${y+h/2}) scale(${n2(Math.min(w,h)/28)})" fill="none" stroke="#f8f5ef" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round">${ICONS[v.icon??'star'].body}</g>`;
     default:return`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" ${SHAPE}/>`;
@@ -168,7 +185,7 @@ export function clearGeometry(raw:LiveEdits|undefined):LiveEdits{
 }
 
 /** What the style tab shows: layout thumbnails and theme swatches. */
-export type StyleGallery={layoutTitle:string;active:string;layouts:{id:string;label:string;note:string;thumb:string}[];themes:{id:string;label:string;colors:string[]}[];onLayout:(id:string)=>void;onTheme:(id:string)=>void};
+export type StyleGallery={layoutTitle:string;active:string;layouts:{id:string;label:string;note:string;thumb:string}[];themes:{id:string;label:string;colors:string[]}[];onLayout:(id:string)=>void;onTheme:(id:string)=>void;onSurprise:(o:{keepLayout:boolean;keepTheme:boolean})=>void};
 
 /** The saved cards of the open editor, with what the "Carte" tab needs to browse and manage them. */
 export type CardLibrary={
