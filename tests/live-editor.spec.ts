@@ -333,6 +333,7 @@ test('collection: drafts, decks from the game files, cards gallery, deck printin
  await page.reload();await goCollection(page);const again=page.getByRole('button',{name:/^Mazzo Rapido/});await expect(again).toContainText('pronto');await expect(again).toContainText('2 carte · 5 copie');await again.click();
  const open=page.getByRole('article',{name:'Mazzo Mazzo Rapido'});await open.getByRole('button',{name:'Stampa il mazzo',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Stampa'});await expect(dialog).toContainText('Mazzo «Mazzo Rapido»: 3 carte diverse, 6 copie (1 non importate, saltate)');await expect(dialog.getByLabel('Formato')).toHaveCount(0);
+ await expect(dialog.getByLabel('Controllo prima di stampare')).toContainText('Controllate 3 carte e il retro');
  await dialog.getByLabel('Copie di ogni extra e obiettivo',{exact:true}).fill('3');await expect(dialog).toContainText('3 carte diverse, 8 copie');await dialog.getByLabel('Copie di ogni extra e obiettivo',{exact:true}).fill('1');
  const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const dl=await download;expect(dl.suggestedFilename()).toBe('mazzo-prova-mazzo.pdf');expect(pdfPages(await readDownload(dl))).toBe(2);
  await page.getByRole('tab',{name:/^Carte \(/}).click();await expect(page.getByText('4 di 4 carte')).toBeVisible();
@@ -441,4 +442,22 @@ test('placeholder illustrations: one card from the editor, many from the collect
  await expect(page.getByRole('status').filter({hasText:'Aggiunti 3 segnaposto'})).toBeVisible();await expect(page.getByRole('button',{name:'Tutte le carte hanno un’illustrazione'})).toBeDisabled();
  const arts=await page.evaluate(()=>JSON.parse(localStorage.getItem('kritoma.cards')!).map((c:{art?:string})=>(c.art||'').slice(0,26)));expect(arts).toEqual(Array(3).fill('data:image/svg+xml;base64,'));
  await page.getByRole('tab',{name:/^Carte \(/}).click();await expect(page.locator('.colGrid img').first()).toBeVisible();expect(errors).toEqual([]);
+});
+test('print check: small text, unreadable colours, overlaps, low resolution and a missing illustration are reported without blocking',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.getByRole('button',{name:'PDF',exact:true}).click();
+ const audit=page.getByLabel('Controllo prima di stampare');
+ await expect(audit.locator('.printAuditSummary')).toContainText('Controllate 1 carta e il retro: 0 errori, 3 avvisi, 1 nota');
+ await expect(audit).toContainText('Testo effetto 1: testo da 4,5 pt, sotto i 6 pt consigliati');await expect(audit).toContainText('Illustrazione: mancante');await expect(audit).toContainText('Per testi più grandi');
+ await page.keyboard.press('Escape');
+ await choose(page,'title');await page.getByLabel('Sposta in alto / basso',{exact:true}).fill('480');
+ await choose(page,'effect-0');await page.getByText('Stile del testo',{exact:true}).click();await page.getByLabel('Colore testo',{exact:true}).fill('#efe7da');
+ const png=await testPng(page,100,50);await page.locator('input[type=file][accept*=png]').setInputFiles({name:'a.png',mimeType:'image/png',buffer:png});
+ await page.getByLabel('Larghezza (mm)',{exact:true}).fill('60');
+ await page.getByRole('button',{name:'PDF',exact:true}).click();
+ await expect(audit.locator('.printAuditSummary')).toContainText('2 errori');
+ await expect(audit).toContainText('Testo effetto 1: contrasto 1:1');await expect(audit).toContainText('«Titolo e riquadro» e «Informazione 1» si sovrappongono');await expect(audit).toContainText('Immagine 1: 42 dpi');
+ await audit.getByRole('button',{name:'Ricontrolla',exact:true}).click();await expect(audit.locator('.printAuditSummary')).toContainText('2 errori');
+ const download=page.waitForEvent('download');await page.getByRole('dialog',{name:'Stampa'}).getByRole('button',{name:'Crea PDF',exact:true}).click();expect(pdfPages(await readDownload(await download))).toBe(2);
+ expect(errors).toEqual([]);
 });
