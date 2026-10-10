@@ -1,5 +1,7 @@
 import {test,expect} from '@playwright/test';
 import type {Page} from '@playwright/test';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 async function drag(page:Page,from:{x:number;y:number},to:{x:number;y:number},touch:boolean){
  if(touch){const cdp=await page.context().newCDPSession(page);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...from,id:1}]});for(let i=1;i<=4;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/4,y:from.y+(to.y-from.y)*i/4,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();}
  else{await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:4});await page.mouse.up();}
@@ -303,4 +305,51 @@ test('importing game cards: browse, open, duplicate, delete, keep after reload, 
  await dialog.getByLabel('Quali carte',{exact:true}).selectOption('saved');await expect(dialog.getByRole('status')).toContainText('3 carte su 1 pagina A4');
  await dialog.getByLabel('Quali carte',{exact:true}).selectOption('savedCopies');
  const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const pdf=await readDownload(await download);expect(pdfPages(pdf)).toBe(1);expect(errors).toEqual([]);
+});
+
+const goCollection=async(page:Page)=>{await page.getByRole('button',{name:/Kritoma.*Editor/}).click();await page.getByRole('button',{name:/Raccolta.*Bozze/}).click();await expect(page.getByRole('main').getByRole('heading',{name:'In corso'})).toBeVisible();};
+test('collection: drafts, decks from the game files, cards gallery, deck printing',async({page},info)=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>void d.accept());
+ await goCollection(page);
+ await expect(page.getByText('Non ancora salvata'.toLowerCase(),{exact:false}).first()).toBeVisible();await expect(page.getByText('0 modelli')).toBeVisible();
+ await page.getByRole('button',{name:'Salva nella raccolta',exact:true}).click();await expect(page.getByText('salvata nella raccolta').first()).toBeVisible();
+ const base={disciplina:'Sportivi',costo:1,rarita:'Comune',copie:2};
+ const files=[
+  sample({...base,id:'CMB-uno',categoria:'Combattente',nome:'Primo Guerriero',atk:1,res:2,prf:0,copie:3}),
+  sample({...base,id:'CMB-due',categoria:'Combattente',nome:'Secondo Guerriero',atk:2,res:3,prf:0}),
+  sample({...base,id:'EXT-tre',categoria:'ExtraCombattente',nome:'Terza Fusione',atk:3,res:4,prf:0,copie:1}),
+  {name:'mazzo.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({id:'mazzo-prova',nome:'Mazzo Prova',descrizione:'Corre molto.',disciplina:'Sportivi',ruolo:'velocita',stato:'bozza',carte:[{id:'CMB-uno',copie:3},{id:'CMB-due',copie:2}],extra:['EXT-tre','EXT-manca'],obiettivi:[]}))},
+  {name:'_ruoli.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({ruoli:[{id:'velocita',nome:'Velocità',colore:'#22c55e',descrizione:'Colpisce per prima.'}]}))},
+  {name:'_ambiti.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({ambiti:[]}))},
+ ];
+ await page.locator('input[type=file][accept*=json][multiple]').setInputFiles(files);
+ const status=page.getByRole('status').filter({hasText:'Importate'});await expect(status).toContainText('Importate 3 carte, 1 mazzo, 1 ruolo');await expect(status).toContainText('1 file ignorati');
+ const tile=page.getByRole('button',{name:/^Mazzo Prova/});await expect(tile).toContainText('2 carte · 5 copie · 2 extra');await expect(tile).toContainText('1 non importate');await expect(tile).toContainText('Velocità');
+ await tile.click();const detail=page.getByRole('article',{name:'Mazzo Mazzo Prova'});
+ await expect(detail.getByText('Colpisce per prima.')).toBeVisible();await expect(detail.getByText('non importata',{exact:false}).first()).toBeVisible();
+ await detail.getByRole('button',{name:'Una copia in più di Primo Guerriero',exact:true}).click();await expect(detail.getByLabel('Copie di Primo Guerriero',{exact:true})).toHaveText('×4');
+ await detail.getByRole('button',{name:'Una copia in meno di Secondo Guerriero',exact:true}).click();await expect(detail.getByLabel('Copie di Secondo Guerriero',{exact:true})).toHaveText('×1');
+ await detail.getByLabel('Nome del mazzo',{exact:true}).fill('Mazzo Rapido');await page.getByLabel('Stato del mazzo',{exact:true}).selectOption('pronto');
+ await page.reload();await goCollection(page);const again=page.getByRole('button',{name:/^Mazzo Rapido/});await expect(again).toContainText('pronto');await expect(again).toContainText('2 carte · 5 copie');await again.click();
+ const open=page.getByRole('article',{name:'Mazzo Mazzo Rapido'});await open.getByRole('button',{name:'Stampa il mazzo',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Stampa'});await expect(dialog).toContainText('Mazzo «Mazzo Rapido»: 3 carte diverse, 6 copie (1 non importate, saltate)');await expect(dialog.getByLabel('Formato')).toHaveCount(0);
+ const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const dl=await download;expect(dl.suggestedFilename()).toBe('mazzo-prova-mazzo.pdf');expect(pdfPages(await readDownload(dl))).toBe(1);
+ await page.getByRole('tab',{name:/^Carte \(/}).click();await expect(page.getByText('4 di 4 carte')).toBeVisible();
+ await page.getByLabel('Tipologia',{exact:true}).selectOption('ExtraCombattente');await expect(page.getByText('1 di 4 carte')).toBeVisible();await page.getByLabel('Tipologia',{exact:true}).selectOption('');
+ await page.getByLabel('Cerca nella raccolta',{exact:true}).fill('secondo');await expect(page.getByText('1 di 4 carte')).toBeVisible();await page.getByLabel('Cerca nella raccolta',{exact:true}).fill('');
+ await page.getByLabel('Seleziona Primo Guerriero',{exact:true}).check();await page.getByLabel('Seleziona Terza Fusione',{exact:true}).check();
+ await page.getByRole('button',{name:'Crea un mazzo con le 2 selezionate',exact:true}).click();await expect(page.getByRole('article',{name:'Mazzo Nuovo mazzo'})).toContainText('2 carte diverse');
+ const fresh=page.getByRole('article',{name:'Mazzo Nuovo mazzo'});await fresh.getByLabel('Aggiungi una carta al mazzo',{exact:true}).selectOption({label:'Secondo Guerriero · Combattente'});await fresh.getByRole('button',{name:'Aggiungi',exact:true}).click();await expect(fresh).toContainText('3 carte diverse');
+ await page.getByRole('tab',{name:/^Carte \(/}).click();await page.getByRole('button',{name:'Apri Secondo Guerriero',exact:true}).click();await expect(page.locator('[data-live-id=title] text')).toHaveText('Secondo Guerriero');
+ expect(errors).toEqual([]);
+});
+test('collection: importing a whole game folder reads cards, decks and roles together',async({page},info)=>{
+ const dir=info.outputPath('gioco');mkdirSync(join(dir,'cards','sportivi'),{recursive:true});mkdirSync(join(dir,'starters'),{recursive:true});
+ const put=(rel:string,o:unknown)=>writeFileSync(join(dir,rel),JSON.stringify(o));
+ for(const [i,name] of ['Alfa','Beta','Gamma'].entries())put(`cards/sportivi/${name}.json`,{id:`CMB-${name}`,categoria:'Combattente',nome:name,disciplina:'Sportivi',costo:i,atk:1,res:1,prf:0,rarita:'Comune',copie:2});
+ put('starters/mazzo.json',{id:'m1',nome:'Mazzo Cartella',carte:[{id:'CMB-Alfa',copie:2},{id:'CMB-Beta',copie:2}],extra:[],obiettivi:[],stato:'bozza'});put('starters/_ruoli.json',{ruoli:[{id:'r',nome:'Ruolo',colore:'#112233'}]});writeFileSync(join(dir,'LEGGIMI.txt'),'non json');
+ await goCollection(page);
+ await page.locator('input[aria-label="Cartella del gioco"]').setInputFiles(dir);
+ const status=page.getByRole('status').filter({hasText:'Importate'});await expect(status).toContainText('Importate 3 carte, 1 mazzo, 1 ruolo');
+ await expect(page.getByRole('tab',{name:'Carte (3)'})).toBeVisible();await expect(page.getByRole('button',{name:/^Mazzo Cartella/})).toContainText('2 carte · 4 copie');
 });

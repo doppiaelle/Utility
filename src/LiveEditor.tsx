@@ -71,8 +71,8 @@ export function LiveEditor({kind,gallery,library,markup,width,height,edits:raw,o
   // Import replaces the stored entries it contains, then reloads so both editors start from them.
   const importBackup=async(ev:React.ChangeEvent<HTMLInputElement>)=>{const f=ev.target.files?.[0];ev.target.value='';if(!f)return;
     const result=parseBackup(await f.text());if(!result.ok){setNotice(result.error);return;}
-    const {cards,terrain,draft,templates:n}=result.summary;
-    if(!window.confirm(`Importare il backup? Sostituisce i dati salvati in questo browser: ${cards} carte, ${draft?'bozza carta, ':''}${terrain?'terreno, ':''}${n} modelli.`))return;
+    const {cards,terrain,draft,templates:n,decks}=result.summary;
+    if(!window.confirm(`Importare il backup? Sostituisce i dati salvati in questo browser: ${cards} carte, ${draft?'bozza carta, ':''}${terrain?'terreno, ':''}${decks?`${decks} mazzi, `:''}${n} modelli.`))return;
     const before=Object.fromEntries(BACKUP_KEYS.map(k=>[k,localStorage.getItem(k)]));
     try{for(const [k,v] of Object.entries(result.entries))localStorage.setItem(k,v);}catch{for(const [k,v] of Object.entries(before)){try{if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch{/* best effort */}}setNotice('Spazio del browser insufficiente: importazione annullata, i dati precedenti sono intatti.');return;}
     window.location.reload();};
