@@ -279,16 +279,20 @@ test('importing game cards: browse, open, duplicate, delete, keep after reload, 
  await input.setInputFiles([
   sample({id:'CMB-uno',categoria:'Combattente',nome:'Primo Guerriero',disciplina:'Sportivi',costo:2,atk:3,res:4,prf:0,personalita:['Metodico'],velocita:'Rapido',effetto:'Pesca 1 carta.',lore:'Corre sempre.',rarita:'Comune',copie:3}),
   sample({id:'OBI-due',categoria:'Obiettivo',nome:'Secondo Traguardo',disciplina:'Medicina',costo:0,condizione:'Hai 4 carte.',pv:2,rarita:'Rara',copie:2}),
-  sample({id:'AZI-tre',categoria:'Azione',nome:'Terza Mossa',disciplina:'Sportivi',costo:1,tipo:'Istantanea',velocita:'Rapido',effetto:'Scarta 1 carta.',rarita:'Leggendaria',copie:4}),
+  sample({id:'AZI-tre',categoria:'Azione',nome:'Terza Mossa',disciplina:'Sportivi',costo:1,tipo:'Istantanea',velocita:'Rapido',effetto:'Scarta 1 carta.',rarita:'Leggendaria',copie:4,innesco:{quando:'entra',azione:'pesca',quantita:2}}),
   {name:'rotto.json',mimeType:'application/json',buffer:Buffer.from('{non e json')},
   sample({id:'x',categoria:'Boh',nome:'Sconosciuta'}),
  ]);
- const status=page.getByRole('status').filter({hasText:'Importate'});await expect(status).toContainText('Importate 3 carte');await expect(status).toContainText('2 scartate');await expect(status).toContainText('Leggendaria');
+ const status=page.getByRole('status').filter({hasText:'Importate'});await expect(status).toContainText('Importate 3 carte');await expect(status).toContainText('2 scartate');await expect(status).not.toContainText('Rarità');
  await expect(page.getByText('3 carte salvate · 9 copie in totale')).toBeVisible();
  await expect(page.locator('[data-live-id=title] text')).toHaveText('Primo Guerriero');await expect(page.locator('[data-live-id=cost-value] text')).toHaveText('2');
  await expect(page.locator('[data-live-id=stat-0]')).toContainText('3');await expect(page.locator('[data-live-id=meta-0]')).toContainText('Metodico');
  await expect(page.locator('[data-live-id=effects]')).toContainText('Pesca 1 carta.');await expect(page.locator('[data-live-id=effects]')).toContainText('Corre sempre.');
  await page.getByRole('button',{name:/^Secondo Traguardo/}).click();await expect(page.locator('[data-live-id=title] text')).toHaveText('Secondo Traguardo');await expect(page.locator('[data-live-id=effects]')).toContainText('CONDIZIONE: Hai 4 carte.');
+ await page.getByRole('button',{name:/^Terza Mossa/}).click();
+ await expect(page.locator('.liveArtwork #art-legendary')).toHaveCount(1);await expect(page.locator('.liveArtwork [data-live-id=rarity-surface] path[fill="#fff0b0"]')).toHaveCount(4);
+ await expect(page.getByText('Dati del gioco · Terza Mossa')).toBeVisible();await expect(page.getByText('quando: entra · azione: pesca · quantita: 2')).toBeVisible();
+ await page.getByRole('button',{name:/^Secondo Traguardo/}).click();
  await page.getByLabel('Cerca una carta',{exact:true}).fill('sportivi');await expect(page.getByRole('button',{name:/^Secondo Traguardo/})).toHaveCount(0);await expect(page.getByRole('button',{name:/^Terza Mossa/})).toBeVisible();
  await page.getByLabel('Cerca una carta',{exact:true}).fill('');
  await page.getByRole('button',{name:'Duplica la carta Terza Mossa',exact:true}).click();await expect(page.getByText('4 carte salvate')).toBeVisible();await expect(page.locator('[data-live-id=id] text').last()).toContainText('AZI-tre-copia');
