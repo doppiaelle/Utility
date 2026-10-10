@@ -45,7 +45,7 @@ export function applyEdits(markup:string,raw:LiveEdits|undefined):string{
   return new XMLSerializer().serializeToString(doc.documentElement);
 }
 
-export const EXTRA_KINDS={text:'Testo',shape:'Rettangolo',ellipse:'Cerchio',line:'Linea',triangle:'Triangolo',diamond:'Rombo',hexagon:'Esagono',star:'Stella',ribbon:'Nastro',shield:'Stemma',divider:'Separatore',image:'Immagine',icon:'Icona'} as const;
+export const EXTRA_KINDS={text:'Testo',shape:'Rettangolo',ellipse:'Cerchio',line:'Linea',triangle:'Triangolo',diamond:'Rombo',hexagon:'Esagono',star:'Stella',ribbon:'Nastro',shield:'Stemma',divider:'Separatore',slot:'Zona carta',image:'Immagine',icon:'Icona'} as const;
 export type ExtraKind=keyof typeof EXTRA_KINDS;
 /** Line icons drawn in a 28-unit box centred on the origin. */
 export const ICONS:Record<string,{label:string;body:string}>={
@@ -102,6 +102,7 @@ function extraBody(v:ExtraElement,data?:Record<string,string>):string{
     case'star':return poly(Array.from({length:10},(_,i)=>{const a=(i*36-90)*Math.PI/180,r=i%2?.2:.5;return[.5+r*Math.cos(a),.5+r*Math.sin(a)] as [number,number]}));
     case'ribbon':return poly([[0,.12],[1,.12],[.92,.5],[1,.88],[0,.88],[.08,.5]]);
     case'shield':return`<path d="M${x} ${y} H${n2(x+w)} V${n2(y+h*.55)} Q${n2(x+w)} ${n2(y+h*.85)} ${n2(x+w/2)} ${n2(y+h)} Q${x} ${n2(y+h*.85)} ${x} ${n2(y+h*.55)} Z" ${SHAPE} stroke-linejoin="round"/>`;
+    case'slot':{const label=v.text.trim();return`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#17120f" fill-opacity=".82" stroke="#6b4d3f" stroke-width="2.1"/><rect x="${n2(x+7)}" y="${n2(y+7)}" width="${n2(Math.max(1,w-14))}" height="${n2(Math.max(1,h-14))}" rx="7" fill="none" stroke="#b37a58" stroke-opacity=".68" stroke-width="1.2"/>${label?`<text x="${n2(x+14)}" y="${n2(y+26)}" fill="#b88b6a" font-size="14" font-weight="700" letter-spacing="1.8" font-family="Arial">${escapeText(label)}</text>`:''}`;}
     case'divider':{const cx=x+w/2,cy=y+h/2,g=Math.min(16,w/4);return`${hit}<g stroke="#eee6da" stroke-width="3" stroke-linecap="round" fill="none"><line x1="${x}" y1="${cy}" x2="${n2(cx-g)}" y2="${cy}"/><line x1="${n2(cx+g)}" y1="${cy}" x2="${x+w}" y2="${cy}"/><path d="M${cx} ${n2(cy-g*.6)} L${n2(cx+g*.6)} ${cy} L${cx} ${n2(cy+g*.6)} L${n2(cx-g*.6)} ${cy} Z" fill="#1d5c6b"/></g>`;}
     case'image':return`<image href="${v.src}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`;
     case'icon':return`${hit}<g transform="translate(${x+w/2} ${y+h/2}) scale(${n2(Math.min(w,h)/28)})" fill="none" stroke="#f8f5ef" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round">${ICONS[v.icon??'star'].body}</g>`;

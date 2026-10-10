@@ -103,3 +103,13 @@ test('decorative kinds and every icon render well-formed SVG that can be edited 
  assert.equal(edited.querySelector('[data-live-id=custom-shield] path').getAttribute('fill'),'#aa3300');assert.equal(edited.querySelector('[data-live-id=custom-ribbon] path').getAttribute('stroke'),'#ffffff');
  for(const [key,icon] of Object.entries(ICONS)){assert.ok(icon.label&&icon.body,key);assert.match(icon.body,/^(<(path|circle|rect)[^>]*\/>)+$/,key);}
 });
+test('a free zone draws like a terrain slot, escapes its label and recolours like any block',()=>{
+ const [zone]=normalizeExtras([{id:'custom-z',kind:'slot',text:'  MAZZO <1>  ',x:10,y:20,w:100,h:140}]);
+ assert.ok('slot' in EXTRA_KINDS);assert.equal(zone.kind,'slot');
+ const doc=parse(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras([zone])}</svg>`);assert.equal(doc.querySelector('parsererror'),null);
+ assert.equal(doc.querySelectorAll('[data-live-id=custom-z] rect').length,2);assert.equal(doc.querySelector('[data-live-id=custom-z] text').textContent,'MAZZO <1>');
+ assert.equal(doc.querySelector('[data-live-id=custom-z] rect').getAttribute('width'),'100');
+ const none=parse(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras([{...zone,text:''}])}</svg>`);assert.equal(none.querySelector('text'),null);
+ const edited=parse(applyEdits(`<svg xmlns="http://www.w3.org/2000/svg">${renderExtras([zone])}</svg>`,{'custom-z':{fill:'#334455',stroke:'#ffffff',textColor:'#aabbcc'}}));
+ assert.equal(edited.querySelector('[data-live-id=custom-z] rect').getAttribute('fill'),'#334455');assert.equal(edited.querySelector('[data-live-id=custom-z] text').getAttribute('fill'),'#aabbcc');
+});
