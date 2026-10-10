@@ -263,7 +263,7 @@ test('print dialog: a sheet of nine cards and a terrain split into pages',async(
  await dialog.getByLabel('Dimensione della pagina',{exact:true}).selectOption('A3');await expect(dialog.getByRole('status')).toContainText('16 carte per pagina');
  await dialog.getByLabel('Dimensione della pagina',{exact:true}).selectOption('A4');await dialog.getByLabel('Copie',{exact:true}).fill('10');
  const first=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const sheet=await first;
- expect(sheet.suggestedFilename()).toMatch(/-foglio\.pdf$/);const pdf=await readDownload(sheet);expect(pdf.startsWith('%PDF')).toBe(true);expect(pdfPages(pdf)).toBe(2);
+ expect(sheet.suggestedFilename()).toMatch(/-foglio\.pdf$/);const pdf=await readDownload(sheet);expect(pdf.startsWith('%PDF')).toBe(true);expect(pdfPages(pdf)).toBe(4);
  await expect(dialog).toHaveCount(0);
  await page.getByRole('button',{name:'PDF',exact:true}).click();await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Stampa'})).toHaveCount(0);
  await page.getByRole('button',{name:/Kritoma.*Editor carta/}).click();await page.getByRole('button',{name:/Editor terreno.*Playmat/}).click();
@@ -304,7 +304,7 @@ test('importing game cards: browse, open, duplicate, delete, keep after reload, 
  await dialog.getByLabel('Quali carte',{exact:true}).selectOption('savedCopies');await expect(dialog.getByRole('status')).toContainText('9 carte su 1 pagina A4');
  await dialog.getByLabel('Quali carte',{exact:true}).selectOption('saved');await expect(dialog.getByRole('status')).toContainText('3 carte su 1 pagina A4');
  await dialog.getByLabel('Quali carte',{exact:true}).selectOption('savedCopies');
- const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const pdf=await readDownload(await download);expect(pdfPages(pdf)).toBe(1);expect(errors).toEqual([]);
+ const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const pdf=await readDownload(await download);expect(pdfPages(pdf)).toBe(2);expect(errors).toEqual([]);
 });
 
 const goCollection=async(page:Page)=>{await page.getByRole('button',{name:/Kritoma.*Editor/}).click();await page.getByRole('button',{name:/Raccolta.*Bozze/}).click();await expect(page.getByRole('main').getByRole('heading',{name:'In corso'})).toBeVisible();};
@@ -334,7 +334,7 @@ test('collection: drafts, decks from the game files, cards gallery, deck printin
  const open=page.getByRole('article',{name:'Mazzo Mazzo Rapido'});await open.getByRole('button',{name:'Stampa il mazzo',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Stampa'});await expect(dialog).toContainText('Mazzo «Mazzo Rapido»: 3 carte diverse, 6 copie (1 non importate, saltate)');await expect(dialog.getByLabel('Formato')).toHaveCount(0);
  await dialog.getByLabel('Copie di ogni extra e obiettivo',{exact:true}).fill('3');await expect(dialog).toContainText('3 carte diverse, 8 copie');await dialog.getByLabel('Copie di ogni extra e obiettivo',{exact:true}).fill('1');
- const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const dl=await download;expect(dl.suggestedFilename()).toBe('mazzo-prova-mazzo.pdf');expect(pdfPages(await readDownload(dl))).toBe(1);
+ const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const dl=await download;expect(dl.suggestedFilename()).toBe('mazzo-prova-mazzo.pdf');expect(pdfPages(await readDownload(dl))).toBe(2);
  await page.getByRole('tab',{name:/^Carte \(/}).click();await expect(page.getByText('4 di 4 carte')).toBeVisible();
  await page.getByLabel('Tipologia',{exact:true}).selectOption('ExtraCombattente');await expect(page.getByText('1 di 4 carte')).toBeVisible();await page.getByLabel('Tipologia',{exact:true}).selectOption('');
  await page.getByLabel('Cerca nella raccolta',{exact:true}).fill('secondo');await expect(page.getByText('1 di 4 carte')).toBeVisible();await page.getByLabel('Cerca nella raccolta',{exact:true}).fill('');
@@ -390,4 +390,38 @@ test('role colours stay readable on the dark surface',async({page})=>{
  const badge=page.getByRole('button',{name:/^Mazzo Difesa/}).locator('i',{hasText:'Difesa'});await expect(badge).toBeVisible();
  const ratio=await badge.evaluate(el=>{const rgb=(s:string)=>(s.match(/\d+/g)||[]).slice(0,3).map(Number);const lin=(v:number)=>{const x=v/255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;};const lum=(c:number[])=>.2126*lin(c[0])+.7152*lin(c[1])+.0722*lin(c[2]);const a=lum(rgb(getComputedStyle(el).color)),b=lum([0x15,0x1d,0x24]);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+const sideSwitch=(page:Page)=>page.getByRole('group',{name:'Lato della carta'});
+test('the back of the cards: designed apart from the front, themed, kept, printed behind the front',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();
+ await expect(page.locator('[data-live-id=back-title] text')).toHaveText('KRITOMA');await expect(page.locator('.liveArtwork [data-live-id=title]')).toHaveCount(0);
+ await choose(page,'back-title');await page.getByLabel('Titolo del dorso',{exact:true}).fill('LEGGENDE');await expect(page.locator('[data-live-id=back-title] text')).toHaveText('LEGGENDE');
+ await choose(page,'back-emblem');await expect(page.getByLabel('Monogramma',{exact:true})).toHaveValue('K');
+ await page.getByRole('tab',{name:'Stile',exact:true}).click();
+ await page.getByRole('button',{name:'Impostazione Motivo',exact:true}).click();await expect(page.locator('.liveArtwork [data-live-id=back-cartouche]')).toHaveCount(1);
+ await page.getByRole('button',{name:'Tema Brace',exact:true}).click();
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('kritoma.back')!));
+ const b=await saved();expect([b.layout,b.color,b.title]).toEqual(['pattern','#b5452d','LEGGENDE']);
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();expect((await saved()).color).toBe('#1d5c6b');
+ await sideSwitch(page).getByRole('button',{name:'Fronte',exact:true}).click();
+ await expect(page.locator('[data-live-id=title] text')).toHaveText('Nome Carta');await expect(page.getByRole('button',{name:'Annulla',exact:true})).toBeDisabled();
+ await page.reload();await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();await expect(page.locator('[data-live-id=back-title] text')).toHaveText('LEGGENDE');
+ await sideSwitch(page).getByRole('button',{name:'Fronte',exact:true}).click();
+ await page.getByRole('button',{name:'PDF',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Stampa'});
+ await dialog.getByLabel('Copie',{exact:true}).fill('10');await expect(dialog.getByRole('status')).toContainText('Con il retro le pagine diventano 4');
+ let download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();expect(pdfPages(await readDownload(await download))).toBe(4);
+ await page.getByRole('button',{name:'PDF',exact:true}).click();await dialog.getByLabel('Copie',{exact:true}).fill('10');await dialog.getByLabel('Retro delle carte',{exact:true}).selectOption('none');await expect(dialog.getByRole('status')).not.toContainText('Con il retro');
+ download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();expect(pdfPages(await readDownload(await download))).toBe(2);
+ await page.getByRole('button',{name:'PDF',exact:true}).click();await dialog.getByLabel('Formato',{exact:true}).selectOption('single');await expect(dialog.getByRole('status')).toContainText('Due pagine (fronte e retro)');
+ download=page.waitForEvent('download');await dialog.getByRole('button',{name:'Crea PDF',exact:true}).click();const single=await download;expect(single.suggestedFilename()).toMatch(/-fronte-retro\.pdf$/);expect(pdfPages(await readDownload(single))).toBe(2);
+ await page.getByRole('button',{name:/Kritoma.*Editor/}).click();await page.getByRole('button',{name:/Raccolta.*Bozze/}).click();
+ await expect(page.getByText('Retro delle carte',{exact:true})).toBeVisible();
+ await page.locator('.colDraft',{hasText:'Retro delle carte'}).getByRole('button',{name:'Apri',exact:true}).click();await expect(page.locator('[data-live-id=back-title] text')).toHaveText('LEGGENDE');
+ expect(errors).toEqual([]);
+});
+test('the back is part of the project backup',async({page})=>{
+ await sideSwitch(page).getByRole('button',{name:'Retro',exact:true}).click();await choose(page,'back-subtitle');await page.getByLabel('Sottotitolo del dorso',{exact:true}).fill('Edizione di prova');
+ await page.getByRole('tab',{name:'Modelli',exact:true}).click();const download=page.waitForEvent('download');await page.getByRole('button',{name:'Esporta progetto (JSON)',exact:true}).click();
+ const json=JSON.parse(await readDownload(await download));expect(json.data['kritoma.back'].subtitle).toBe('Edizione di prova');
 });

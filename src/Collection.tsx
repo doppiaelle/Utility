@@ -8,8 +8,8 @@ import './collection.css';
 export type CollectionCard={id:string;name:string;typeLabel:string;scope:string;scopeColor:string;rarity:string;rarityLabel:string;copies:number;thumb:string};
 type Props={
   cards:CollectionCard[];decks:Deck[];roles:Record<string,Role>;
-  draft:{id:string;name:string;thumb:string;saved:boolean;terrain:{name:string;thumb:string}|null;templates:number};
-  onOpenCard:(id:string)=>void;onOpenDraft:()=>void;onOpenTerrain:()=>void;onSaveDraft:()=>void;
+  draft:{id:string;name:string;thumb:string;back:string;saved:boolean;terrain:{name:string;thumb:string}|null;templates:number};
+  onOpenCard:(id:string)=>void;onOpenDraft:()=>void;onOpenBack:()=>void;onOpenTerrain:()=>void;onSaveDraft:()=>void;
   onImport:(files:File[])=>Promise<string>;onDecks:(decks:Deck[])=>void;onPrintDeck:(deck:Deck)=>void;
   onCard:()=>void;onTerrain:()=>void;
 };
@@ -31,6 +31,7 @@ export function Collection(p:Props){
     <main className="collection">
       <section className="colDrafts" aria-label="Bozze in corso"><h2>In corso</h2><div className="colDraftRow">
         <div className="colDraft"><img src={p.draft.thumb} alt=""/><div><b>{p.draft.name}</b><small>Carta in modifica · {p.draft.saved?'salvata nella raccolta':'non ancora salvata'}</small><span><button onClick={p.onOpenDraft}>Apri</button>{!p.draft.saved&&<button onClick={p.onSaveDraft}>Salva nella raccolta</button>}</span></div></div>
+        <div className="colDraft"><img src={p.draft.back} alt=""/><div><b>Retro delle carte</b><small>Uguale per tutte le carte del gioco</small><span><button onClick={p.onOpenBack}>Apri</button></span></div></div>
         <div className="colDraft">{p.draft.terrain?<img className="isWide" src={p.draft.terrain.thumb} alt=""/>:<span className="colNoThumb">▤</span>}<div><b>{p.draft.terrain?.name??'Nessun terreno'}</b><small>Terreno in modifica</small><span><button onClick={p.onOpenTerrain}>Apri</button></span></div></div>
         <div className="colDraft"><span className="colNoThumb">◫</span><div><b>{p.draft.templates} {p.draft.templates===1?'modello':'modelli'}</b><small>Layout salvati, per carta e terreno</small></div></div>
       </div></section>

@@ -118,13 +118,13 @@ export function removeIndexedEdits(raw:LiveEdits|undefined,prefix:'meta'|'effect
 }
 
 /** A reusable layout: per-block edits plus free elements, never card or terrain content. */
-export type LayoutTemplate={id:string;name:string;kind:'card'|'terrain';liveEdits:LiveEdits;extras:ExtraElement[]};
+export type LayoutTemplate={id:string;name:string;kind:'card'|'terrain'|'back';liveEdits:LiveEdits;extras:ExtraElement[]};
 export const TEMPLATE_LIMIT=50;
-export function normalizeTemplates(raw:unknown,kind?:'card'|'terrain'):LayoutTemplate[]{
+export function normalizeTemplates(raw:unknown,kind?:'card'|'terrain'|'back'):LayoutTemplate[]{
   if(!Array.isArray(raw))return[];
   const seen=new Set<string>(),result:LayoutTemplate[]=[];
   for(const v of raw){
-    if(!v||typeof v!=='object'||!/^tpl-[\w-]+$/.test(v.id)||seen.has(v.id)||(v.kind!=='card'&&v.kind!=='terrain')||(kind&&v.kind!==kind))continue;
+    if(!v||typeof v!=='object'||!/^tpl-[\w-]+$/.test(v.id)||seen.has(v.id)||(v.kind!=='card'&&v.kind!=='terrain'&&v.kind!=='back')||(kind&&v.kind!==kind))continue;
     const name=String(v.name??'').trim().slice(0,60);if(!name)continue;
     seen.add(v.id);result.push({id:v.id,name,kind:v.kind,liveEdits:normalizeEdits(v.liveEdits),extras:normalizeExtras(v.extras)});
     if(result.length>=TEMPLATE_LIMIT)break;
@@ -150,25 +150,26 @@ export function safeSvg(markup:string):string{
 
 /** One JSON file holding everything the editors keep in the browser. */
 import {normalizeDecks,normalizeRoles} from './decks.ts';
-export const BACKUP_KEYS=['kritoma.cards','kritoma.cardDraft','kritoma.terrain','kritoma.templates','kritoma.decks','kritoma.roles'] as const;
+export const BACKUP_KEYS=['kritoma.cards','kritoma.cardDraft','kritoma.terrain','kritoma.templates','kritoma.decks','kritoma.roles','kritoma.back'] as const;
 export const BACKUP_MAX_CHARS=40_000_000;
 export function buildBackup(read:(key:string)=>string|null,now=new Date()):string{
   const data:Record<string,unknown>={};
   for(const key of BACKUP_KEYS){const raw=read(key);if(raw===null)continue;try{data[key]=JSON.parse(raw);}catch{/* an unreadable entry is left out rather than breaking the whole backup */}}
   return JSON.stringify({format:'kritoma-backup',version:1,exportedAt:now.toISOString(),data});
 }
-export type BackupResult={ok:true;entries:Record<string,string>;summary:{cards:number;terrain:boolean;draft:boolean;templates:number;decks:number}}|{ok:false;error:string};
+export type BackupResult={ok:true;entries:Record<string,string>;summary:{cards:number;terrain:boolean;draft:boolean;templates:number;decks:number;back:boolean}}|{ok:false;error:string};
 const plain=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export function parseBackup(text:string):BackupResult{
   if(typeof text!=='string'||text.length>BACKUP_MAX_CHARS)return{ok:false,error:'File troppo grande o non valido.'};
   let file:unknown;try{file=JSON.parse(text);}catch{return{ok:false,error:'Il file non è un JSON leggibile.'};}
   if(!plain(file)||file.format!=='kritoma-backup'||file.version!==1||!plain(file.data))return{ok:false,error:'Non è un backup di questo editor (formato o versione sconosciuti).'};
-  const entries:Record<string,string>={},summary={cards:0,terrain:false,draft:false,templates:0,decks:0},data=file.data;
+  const entries:Record<string,string>={},summary={cards:0,terrain:false,draft:false,templates:0,decks:0,back:false},data=file.data;
   if('kritoma.cards' in data){const v=data['kritoma.cards'];if(!Array.isArray(v)||v.length>500||!v.every(plain))return{ok:false,error:'Le carte salvate nel backup non sono valide.'};entries['kritoma.cards']=JSON.stringify(v);summary.cards=v.length;}
   if('kritoma.cardDraft' in data&&data['kritoma.cardDraft']!==null){const v=data['kritoma.cardDraft'];if(!plain(v))return{ok:false,error:'La bozza della carta nel backup non è valida.'};entries['kritoma.cardDraft']=JSON.stringify(v);summary.draft=true;}
   if('kritoma.terrain' in data&&data['kritoma.terrain']!==null){const v=data['kritoma.terrain'];if(!plain(v))return{ok:false,error:'Il terreno nel backup non è valido.'};entries['kritoma.terrain']=JSON.stringify(v);summary.terrain=true;}
   if('kritoma.templates' in data){const v=normalizeTemplates(data['kritoma.templates']);entries['kritoma.templates']=JSON.stringify(v);summary.templates=v.length;}
   if('kritoma.decks' in data){const v=normalizeDecks(data['kritoma.decks']);entries['kritoma.decks']=JSON.stringify(v);summary.decks=v.length;}
+  if('kritoma.back' in data&&data['kritoma.back']!==null){const v=data['kritoma.back'];if(!plain(v)||JSON.stringify(v).length>300000)return{ok:false,error:'Il retro nel backup non è valido.'};entries['kritoma.back']=JSON.stringify(v);summary.back=true;}
   if('kritoma.roles' in data)entries['kritoma.roles']=JSON.stringify(normalizeRoles(data['kritoma.roles']));
   return Object.keys(entries).length?{ok:true,entries,summary}:{ok:false,error:'Il backup non contiene dati da importare.'};
 }

@@ -70,7 +70,7 @@ test('safeSvg strips handlers, scripts and javascript: links and leaves clean ma
 test('backups round-trip, drop invalid templates and refuse foreign or oversized files',()=>{
  const store={'kritoma.cards':JSON.stringify([{id:'A'}]),'kritoma.terrain':JSON.stringify({name:'T'}),'kritoma.templates':JSON.stringify([{id:'tpl-a',name:'Base',kind:'card',liveEdits:{},extras:[]},{id:'bad',name:'x',kind:'card'}]),'kritoma.cardDraft':'not json'};
  const json=buildBackup(k=>store[k]??null,new Date('2026-01-02T03:04:05Z'));
- const result=parseBackup(json);assert.equal(result.ok,true);assert.deepEqual(result.summary,{cards:1,terrain:true,draft:false,templates:1,decks:0});
+ const result=parseBackup(json);assert.equal(result.ok,true);assert.deepEqual(result.summary,{cards:1,terrain:true,draft:false,templates:1,decks:0,back:false});
  assert.deepEqual(JSON.parse(result.entries['kritoma.templates']).map(t=>t.id),['tpl-a']);assert.equal('kritoma.cardDraft' in result.entries,false);
  for(const bad of['{','[]','{"format":"x"}','{"format":"kritoma-backup","version":2,"data":{}}','{"format":"kritoma-backup","version":1,"data":{}}','{"format":"kritoma-backup","version":1,"data":{"kritoma.cards":[1]}}','{"format":"kritoma-backup","version":1,"data":{"kritoma.cards":"x"}}'])assert.equal(parseBackup(bad).ok,false,bad);
  assert.equal(parseBackup('x'.repeat(40_000_001)).ok,false);
