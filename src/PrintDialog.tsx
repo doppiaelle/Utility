@@ -2,28 +2,29 @@ import React,{useEffect,useState} from 'react';
 import {CARD_MM,PAGES,bestTilePlan,cardSheetPlan} from './print';
 import type {PageName} from './print';
 
-export type CardPrint={mode:'single'|'sheet';page:PageName;content:'current'|'saved'|'savedCopies';copies:number;marks:boolean};
+export type CardPrint={mode:'single'|'sheet';page:PageName;content:'current'|'saved'|'savedCopies'|'deck';copies:number;marks:boolean};
 export type TerrainPrint={mode:'full'|'tiles';page:PageName;overlap:number};
 type Common={onClose:()=>void};
-type Props=(Common&{kind:'card';savedCount:number;savedCopies:number;onPrint:(o:CardPrint)=>Promise<void>})|(Common&{kind:'terrain';widthMm:number;heightMm:number;onPrint:(o:TerrainPrint)=>Promise<void>});
+type Props=(Common&{kind:'card';savedCount:number;savedCopies:number;deck?:{name:string;copies:number;distinct:number;skipped:number};onPrint:(o:CardPrint)=>Promise<void>})|(Common&{kind:'terrain';widthMm:number;heightMm:number;onPrint:(o:TerrainPrint)=>Promise<void>});
 
 const pageField=(page:PageName,set:(p:PageName)=>void)=><label>Dimensione della pagina<select aria-label="Dimensione della pagina" value={page} onChange={e=>set(e.target.value as PageName)}>{(Object.keys(PAGES) as PageName[]).map(p=><option key={p} value={p}>{p} ({PAGES[p].w}×{PAGES[p].h} mm)</option>)}</select></label>;
 
 export function PrintDialog(props:Props){
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
-  const [card,setCard]=useState<CardPrint>({mode:'sheet',page:'A4',content:'current',copies:9,marks:true});
+  const [card,setCard]=useState<CardPrint>({mode:'sheet',page:'A4',content:props.kind==='card'&&props.deck?'deck':'current',copies:9,marks:true});
   const [terrain,setTerrain]=useState<TerrainPrint>({mode:'tiles',page:'A4',overlap:10});
   useEffect(()=>{const key=(ev:KeyboardEvent)=>{if(ev.key==='Escape'&&!busy)props.onClose();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[busy]);
   const run=async()=>{setBusy(true);setError('');try{if(props.kind==='card')await props.onPrint(card);else await props.onPrint(terrain);props.onClose();}catch{setError('Non è stato possibile creare il PDF. Prova con meno carte o una pagina più piccola.');}finally{setBusy(false);}};
   let summary='',body:React.ReactNode;
   if(props.kind==='card'){
-    const plan=cardSheetPlan(PAGES[card.page]),count=card.content==='saved'?props.savedCount:card.content==='savedCopies'?props.savedCopies:Math.max(1,card.copies),pages=Math.ceil(count/Math.max(1,plan.perPage));
+    const plan=cardSheetPlan(PAGES[card.page]),count=card.content==='deck'&&props.deck?props.deck.copies:card.content==='saved'?props.savedCount:card.content==='savedCopies'?props.savedCopies:Math.max(1,card.copies),pages=Math.ceil(count/Math.max(1,plan.perPage));
     summary=card.mode==='single'?`Una pagina di ${CARD_MM.w}×${CARD_MM.h} mm, a misura reale.`:`${plan.perPage} carte per pagina (${plan.cols}×${plan.rows}) a misura reale: ${count} ${count===1?'carta':'carte'} su ${pages} ${pages===1?'pagina':'pagine'} ${card.page}. Stampa al 100%, senza adattare alla pagina.`;
     body=<>
-      <label>Formato<select aria-label="Formato" value={card.mode} onChange={e=>setCard({...card,mode:e.target.value as CardPrint['mode']})}><option value="sheet">Foglio con più carte</option><option value="single">Una carta (63×88 mm)</option></select></label>
+      {props.deck&&<p className="printDeckNote">Mazzo «{props.deck.name}»: {props.deck.distinct} carte diverse, {props.deck.copies} copie{props.deck.skipped?` (${props.deck.skipped} non importate, saltate)`:''}. Extra e obiettivi in una copia.</p>}
+      {!props.deck&&<label>Formato<select aria-label="Formato" value={card.mode} onChange={e=>setCard({...card,mode:e.target.value as CardPrint['mode']})}><option value="sheet">Foglio con più carte</option><option value="single">Una carta (63×88 mm)</option></select></label>}
       {card.mode==='sheet'&&<>
         {pageField(card.page,page=>setCard({...card,page}))}
-        <label>Quali carte<select aria-label="Quali carte" value={card.content} onChange={e=>setCard({...card,content:e.target.value as CardPrint['content']})}><option value="current">Questa carta, ripetuta</option><option value="saved" disabled={!props.savedCount}>Tutte le carte salvate, una copia ciascuna ({props.savedCount})</option><option value="savedCopies" disabled={!props.savedCount}>Tutte le carte salvate, con le copie previste ({props.savedCopies})</option></select></label>
+        {!props.deck&&<label>Quali carte<select aria-label="Quali carte" value={card.content} onChange={e=>setCard({...card,content:e.target.value as CardPrint['content']})}><option value="current">Questa carta, ripetuta</option><option value="saved" disabled={!props.savedCount}>Tutte le carte salvate, una copia ciascuna ({props.savedCount})</option><option value="savedCopies" disabled={!props.savedCount}>Tutte le carte salvate, con le copie previste ({props.savedCopies})</option></select></label>}
         {card.content==='current'&&<label>Copie<input aria-label="Copie" type="number" min={1} max={200} value={card.copies} onChange={e=>setCard({...card,copies:Math.max(1,Math.min(200,Math.round(e.target.valueAsNumber)||1))})}/></label>}
         <label className="printCheck"><input type="checkbox" checked={card.marks} onChange={e=>setCard({...card,marks:e.target.checked})}/>Segni di taglio nei margini</label>
       </>}
